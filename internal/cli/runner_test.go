@@ -292,6 +292,45 @@ func TestRunner_AutoMergeFailureNotFatal(t *testing.T) {
 	}
 }
 
+func TestRunner_SkipsUnsupportedManifest(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cr.yaml")
+	cr := `apiVersion: example.com/v1
+kind: WidgetSet
+metadata:
+  name: w
+spec:
+  resources:
+    requests:
+      cpu: "1"
+`
+	if err := os.WriteFile(path, []byte(cr), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Defaults()
+	cfg.DryRun = true
+	var out bytes.Buffer
+	r := &Runner{
+		Cfg:        cfg,
+		Repo:       dir,
+		Discoverer: fakeDiscoverer{loc: &discover.Location{File: path, DocIndex: 0}},
+		Out:        &out,
+	}
+	target := []adapter.Target{{
+		Namespace: "default", Kind: "WidgetSet", Name: "w", Container: "main",
+		Recommended: adapter.Recommended{Requests: adapter.ResourceValues{CPU: q("250m")}},
+	}}
+	if err := r.Run(context.Background(), target); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(out.String()), "no field mapper") {
+		t.Errorf("expected a 'no field mapper' skip, got:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "250m") {
+		t.Errorf("unsupported manifest must not be edited:\n%s", out.String())
+	}
+}
+
 func TestRunner_SkipsNotFound(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.DryRun = true

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/pmezard/go-difflib/difflib"
+	"sigs.k8s.io/kustomize/kyaml/yaml"
 
 	"github.com/Ca-moes/rere/internal/adapter"
 	"github.com/Ca-moes/rere/internal/config"
@@ -23,13 +24,25 @@ import (
 
 // Runner executes the pipeline for a set of targets. It depends on the
 // Discoverer and Opener interfaces so it is fully fake-testable; Opener is nil
-// in dry-run mode.
+// in dry-run mode. Mappers is the ordered FieldMapper registry; when empty it
+// defaults to tier-1 only.
 type Runner struct {
 	Cfg        *config.Config
 	Repo       string
 	Discoverer discover.Discoverer
 	Opener     pr.Opener
+	Mappers    []fieldmap.FieldMapper
 	Out        io.Writer
+}
+
+// selectMapper returns the first mapper that supports root, or nil if none do.
+func selectMapper(ms []fieldmap.FieldMapper, root *yaml.RNode) fieldmap.FieldMapper {
+	for _, m := range ms {
+		if m.Supports(root) {
+			return m
+		}
+	}
+	return nil
 }
 
 type workloadGroup struct {
@@ -64,6 +77,9 @@ func groupByWorkload(targets []adapter.Target) []workloadGroup {
 // surfaces it. Expected skips (not found, ambiguous, unsupported kind, no
 // changes) are not failures.
 func (r *Runner) Run(ctx context.Context, targets []adapter.Target) error {
+	if len(r.Mappers) == 0 {
+		r.Mappers = []fieldmap.FieldMapper{fieldmap.Tier1{}}
+	}
 	var failed int
 	for _, grp := range groupByWorkload(targets) {
 		if err := r.processWorkload(ctx, grp); err != nil {
@@ -78,11 +94,6 @@ func (r *Runner) Run(ctx context.Context, targets []adapter.Target) error {
 }
 
 func (r *Runner) processWorkload(ctx context.Context, grp workloadGroup) error {
-	if !fieldmap.Tier1Supports(grp.Kind) {
-		fmt.Fprintf(r.Out, "skip %s/%s: kind %q not supported in M1 (tier-1 only)\n", grp.Kind, grp.Name, grp.Kind)
-		return nil
-	}
-
 	loc, err := r.Discoverer.Discover(ctx, discover.Workload{Namespace: grp.Namespace, Kind: grp.Kind, Name: grp.Name})
 	if err != nil {
 		// Only not-found and ambiguous are expected skips. Anything else (a
@@ -101,17 +112,47 @@ func (r *Runner) processWorkload(ctx context.Context, grp workloadGroup) error {
 		return fmt.Errorf("read %s: %w", loc.File, err)
 	}
 
-	var edits []yamledit.Edit
+	// Parse the addressed doc and pick the FieldMapper that handles it. Selection
+	// needs the parsed manifest, so it happens after discover/read — an
+	// unsupported manifest is a skip, not a failure.
+	root, err := yamledit.SelectDoc(orig, grp.Kind, grp.Name)
+	if err != nil {
+		return fmt.Errorf("parse %s: %w", loc.File, err)
+	}
+	if root == nil {
+		fmt.Fprintf(r.Out, "skip %s: %s not found in %s\n", workloadRef(grp), grp.Kind, loc.File)
+		return nil
+	}
+	mapper := selectMapper(r.Mappers, root)
+	if mapper == nil {
+		fmt.Fprintf(r.Out, "skip %s: no field mapper supports kind %q\n", workloadRef(grp), grp.Kind)
+		return nil
+	}
+
+	var edits []yamledit.PathEdit
 	for _, t := range grp.Targets {
-		cur, err := yamledit.ReadCurrent(bytes.NewReader(orig), grp.Kind, grp.Name, t.Container)
+		tg := fieldmap.Target{Kind: grp.Kind, Container: t.Container}
+		paths, err := resolveCells(mapper, root, tg)
 		if err != nil {
-			return fmt.Errorf("read current %s/%s/%s: %w", grp.Kind, grp.Name, t.Container, err)
+			// The addressed container/subtree is absent — skip this target, not
+			// the whole workload.
+			fmt.Fprintf(r.Out, "skip %s container %q: %v\n", workloadRef(grp), t.Container, err)
+			continue
+		}
+		cur, err := yamledit.ReadCurrentAt(root, func(section, res string) ([]string, error) {
+			return paths[fieldmap.ResourceField{Section: section, Name: res}], nil
+		})
+		if err != nil {
+			return fmt.Errorf("read current %s/%s: %w", workloadRef(grp), t.Container, err)
 		}
 		_, containerEdits := policy.Decide(cur, t.Recommended, r.Cfg.Policy)
-		for i := range containerEdits {
-			containerEdits[i].Container = t.Container
+		for _, e := range containerEdits {
+			edits = append(edits, yamledit.PathEdit{
+				Path:   paths[fieldmap.ResourceField{Section: e.Section, Name: e.Resource}],
+				Value:  e.Value,
+				Delete: e.Delete,
+			})
 		}
-		edits = append(edits, containerEdits...)
 	}
 	if len(edits) == 0 {
 		fmt.Fprintf(r.Out, "%s/%s: no changes (within deadband)\n", grp.Kind, grp.Name)
@@ -119,7 +160,7 @@ func (r *Runner) processWorkload(ctx context.Context, grp workloadGroup) error {
 	}
 
 	var buf bytes.Buffer
-	changed, err := yamledit.Apply(bytes.NewReader(orig), &buf, grp.Kind, grp.Name, edits)
+	changed, err := yamledit.ApplyPaths(bytes.NewReader(orig), &buf, grp.Kind, grp.Name, edits)
 	if err != nil {
 		return fmt.Errorf("apply %s/%s: %w", grp.Kind, grp.Name, err)
 	}
@@ -185,6 +226,25 @@ func (r *Runner) openPR(ctx context.Context, grp workloadGroup, path, content st
 		return fmt.Errorf("open PR for %s: %w", workloadRef(grp), err)
 	}
 	return nil
+}
+
+// resolveCells resolves the four requests/limits × cpu/memory paths for a
+// target once, so the current-value read and the edits share them and an absent
+// container/subtree is caught before any work begins.
+func resolveCells(m fieldmap.FieldMapper, root *yaml.RNode, tg fieldmap.Target) (map[fieldmap.ResourceField][]string, error) {
+	cells := []fieldmap.ResourceField{
+		{Section: "requests", Name: "cpu"}, {Section: "requests", Name: "memory"},
+		{Section: "limits", Name: "cpu"}, {Section: "limits", Name: "memory"},
+	}
+	paths := make(map[fieldmap.ResourceField][]string, len(cells))
+	for _, f := range cells {
+		p, err := m.ResolvePath(root, tg, f)
+		if err != nil {
+			return nil, err
+		}
+		paths[f] = p
+	}
+	return paths, nil
 }
 
 // branchName builds a head branch unique per workload, including the namespace

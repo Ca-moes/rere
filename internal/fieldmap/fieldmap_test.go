@@ -112,6 +112,36 @@ func TestTier1_ResolveDeterministicOrder(t *testing.T) {
 	}
 }
 
+func TestTier1_ResolvePath(t *testing.T) {
+	m := Tier1{}
+	root := parse(t, deployYAML)
+	got, err := m.ResolvePath(root, Target{Kind: "Deployment", Container: "web"},
+		ResourceField{Section: "requests", Name: "cpu"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"spec", "template", "spec", "containers", "[name=web]", "resources", "requests", "cpu"}
+	if !slices.Equal(got, want) {
+		t.Errorf("path = %v, want %v", got, want)
+	}
+
+	gotInit, err := m.ResolvePath(root,
+		Target{Kind: "Deployment", Container: "init", InitContainer: true},
+		ResourceField{Section: "limits", Name: "memory"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantInit := []string{"spec", "template", "spec", "initContainers", "[name=init]", "resources", "limits", "memory"}
+	if !slices.Equal(gotInit, wantInit) {
+		t.Errorf("init path = %v, want %v", gotInit, wantInit)
+	}
+
+	if _, err := m.ResolvePath(root, Target{Kind: "Deployment", Container: "ghost"},
+		ResourceField{Section: "requests", Name: "cpu"}); err == nil {
+		t.Error("expected error for absent container")
+	}
+}
+
 func TestTier1_ResolveAbsentContainer(t *testing.T) {
 	_, err := Tier1{}.Resolve(parse(t, deployYAML), Target{Kind: "Deployment", Container: "ghost"},
 		map[ResourceField]string{{Section: "requests", Name: "cpu"}: "250m"})

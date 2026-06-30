@@ -5,7 +5,11 @@
 // callers. Resolve returns paths and values only — it never mutates.
 package fieldmap
 
-import "sigs.k8s.io/kustomize/kyaml/yaml"
+import (
+	"sort"
+
+	"sigs.k8s.io/kustomize/kyaml/yaml"
+)
 
 // ResourceField names one resource cell: a section (requests|limits) and a
 // resource (cpu|memory).
@@ -32,8 +36,24 @@ type Target struct {
 type FieldMapper interface {
 	// Supports reports whether this mapper handles the given manifest.
 	Supports(root *yaml.RNode) bool
-	// Resolve returns one ResolvedEdit per wanted field, after verifying the
-	// container exists. It errors if the container is absent (no phantom
-	// creation).
+	// ResolvePath returns the absolute YAML path of a single resource cell,
+	// after verifying the addressed container/subtree exists. It errors if it is
+	// absent (no phantom creation). Single-cell and value-free so deletes (which
+	// carry no value) are first-class.
+	ResolvePath(root *yaml.RNode, t Target, f ResourceField) ([]string, error)
+	// Resolve returns one ResolvedEdit per wanted field, in a deterministic
+	// (section, name) order. It errors if the container is absent.
 	Resolve(root *yaml.RNode, t Target, want map[ResourceField]string) ([]ResolvedEdit, error)
+}
+
+// sortEdits orders edits deterministically by (section, name) — limits before
+// requests, cpu before memory — so output is stable across runs. Shared by all
+// tiers.
+func sortEdits(edits []ResolvedEdit) {
+	sort.Slice(edits, func(i, j int) bool {
+		if edits[i].Field.Section != edits[j].Field.Section {
+			return edits[i].Field.Section < edits[j].Field.Section
+		}
+		return edits[i].Field.Name < edits[j].Field.Name
+	})
 }
