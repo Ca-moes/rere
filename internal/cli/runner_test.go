@@ -362,6 +362,39 @@ spec:
 	}
 }
 
+func TestRunner_FalsePositiveTranslationFallsBackToTier1(t *testing.T) {
+	// A plain Deployment named "metrics-collector" matches the OTel built-in's
+	// "-collector" suffix, but there is no OpenTelemetryCollector CR. It must
+	// still be right-sized by tier-1, not silently skipped (regression guard).
+	dir := t.TempDir()
+	dep := strings.Replace(deployManifest, "name: web", "name: metrics-collector", 1)
+	path := filepath.Join(dir, "dep.yaml")
+	if err := os.WriteFile(path, []byte(dep), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Defaults()
+	cfg.DryRun = true
+	maps := fieldmap.MergedMaps(fieldmap.MapConfig{})
+	var out bytes.Buffer
+	r := &Runner{
+		Cfg: cfg, Repo: dir,
+		Discoverer: &discover.RepoScanner{Root: dir},
+		Mappers:    []fieldmap.FieldMapper{fieldmap.Tier2{Maps: maps}, fieldmap.Tier1{}},
+		FieldMaps:  maps,
+		Out:        &out,
+	}
+	targets := []adapter.Target{{
+		Namespace: "default", Kind: "Deployment", Name: "metrics-collector", Container: "web",
+		Recommended: adapter.Recommended{Requests: adapter.ResourceValues{CPU: q("250m")}},
+	}}
+	if err := r.Run(context.Background(), targets); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(out.String(), "250m") {
+		t.Errorf("a Deployment matching a built-in suffix but with no CR must be tier-1 right-sized:\n%s", out.String())
+	}
+}
+
 func TestRunner_Tier2OperatorCR(t *testing.T) {
 	// The recommender names the generated Deployment "otel-collector"; rere must
 	// translate that to the OpenTelemetryCollector CR "otel" and edit its
