@@ -10,7 +10,7 @@ writing those numbers back into a GitOps repo** — across raw manifests, Helm `
 Custom Resources — as **clean, auto-merged pull requests**, with surgical edits that preserve your
 comments and formatting.
 
-`rere` is an open-source (MIT) Go CLI + GitHub Action that does exactly that. It is **complementary to
+`rere` is a Go CLI + GitHub Action that does exactly that. It is **complementary to
 your recommender, not a replacement**:
 
 > **Keep your recommender — `rere` adds the write-back half.**
@@ -42,4 +42,7 @@ Design, architecture, and the decisions behind them live under [`docs/`](docs/):
 
 ## License
 
-MIT
+**Proprietary — all rights reserved.** The source is published for transparency and evaluation only; it
+is **not** open source and may not be used, copied, modified, or redistributed without prior written
+permission. See [LICENSE](LICENSE). The intent is to relax this to a more permissive license once the
+project matures.
