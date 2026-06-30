@@ -2,7 +2,6 @@ package fieldmap
 
 import (
 	"fmt"
-	"sort"
 
 	"sigs.k8s.io/kustomize/kyaml/yaml"
 )
@@ -31,9 +30,9 @@ func Tier1Supports(kind string) bool {
 	return tier1Kinds[kind]
 }
 
-// Resolve verifies the container exists under spec.template.spec and returns a
-// ResolvedEdit per wanted field, in a deterministic (section, name) order.
-func (Tier1) Resolve(root *yaml.RNode, t Target, want map[ResourceField]string) ([]ResolvedEdit, error) {
+// ResolvePath verifies the container exists under spec.template.spec and returns
+// the absolute path of one resource cell. It errors if the container is absent.
+func (Tier1) ResolvePath(root *yaml.RNode, t Target, f ResourceField) ([]string, error) {
 	containersField := "containers"
 	if t.InitContainer {
 		containersField = "initContainers"
@@ -48,17 +47,21 @@ func (Tier1) Resolve(root *yaml.RNode, t Target, want map[ResourceField]string) 
 		return nil, fmt.Errorf("fieldmap: container %q not found in %s %s", t.Container, t.Kind, containersField)
 	}
 
-	base := []string{"spec", "template", "spec", containersField, elem, "resources"}
+	return []string{"spec", "template", "spec", containersField, elem, "resources", f.Section, f.Name}, nil
+}
+
+// Resolve returns a ResolvedEdit per wanted field, in a deterministic
+// (section, name) order. It errors if the container is absent (no phantom
+// creation).
+func (m Tier1) Resolve(root *yaml.RNode, t Target, want map[ResourceField]string) ([]ResolvedEdit, error) {
 	edits := make([]ResolvedEdit, 0, len(want))
 	for f, v := range want {
-		path := append(append([]string{}, base...), f.Section, f.Name)
+		path, err := m.ResolvePath(root, t, f)
+		if err != nil {
+			return nil, err
+		}
 		edits = append(edits, ResolvedEdit{Field: f, Path: path, Value: v})
 	}
-	sort.Slice(edits, func(i, j int) bool {
-		if edits[i].Field.Section != edits[j].Field.Section {
-			return edits[i].Field.Section < edits[j].Field.Section
-		}
-		return edits[i].Field.Name < edits[j].Field.Name
-	})
+	sortEdits(edits)
 	return edits, nil
 }
