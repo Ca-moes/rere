@@ -42,6 +42,24 @@ func TestReadCurrent_ContainerNotFound(t *testing.T) {
 	}
 }
 
+func TestReadCurrentAt(t *testing.T) {
+	in := readFixture(t, "removelimit.in.yaml")
+	root, err := SelectDoc(in, "Deployment", "web")
+	if err != nil || root == nil {
+		t.Fatalf("SelectDoc: err=%v root=%v", err, root)
+	}
+	rec, err := ReadCurrentAt(root, func(section, res string) ([]string, error) {
+		return []string{"spec", "template", "spec", "containers", "[name=web]", "resources", section, res}, nil
+	})
+	if err != nil {
+		t.Fatalf("ReadCurrentAt: %v", err)
+	}
+	qEq(t, rec.Requests.CPU, "100m")
+	qEq(t, rec.Requests.Mem, "64Mi")
+	qEq(t, rec.Limits.CPU, "200m")
+	qEq(t, rec.Limits.Mem, "128Mi")
+}
+
 func TestReadCurrent_PartialResources(t *testing.T) {
 	in := readFixture(t, "notfound.in.yaml") // web: requests.cpu only
 	rec, err := ReadCurrent(bytes.NewReader(in), "Deployment", "web", "web")
