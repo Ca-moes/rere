@@ -1,0 +1,14 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-web
+spec:
+  template:
+    spec:
+      containers:
+        {{- range .Values.containers }}
+        - name: {{ .name }}
+          resources:
+            requests:
+              cpu: {{ .cpu }}
+        {{- end }}
