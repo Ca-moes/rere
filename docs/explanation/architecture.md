@@ -49,7 +49,7 @@ A thin **cli** layer (cobra, [ADR-0005](../adrs/0005-cobra-cli-framework.md)) or
 
 `FieldMapper` is one interface (`Supports` / `ResolvePath` / `Resolve`); the run loop selects the first mapper that supports a manifest and edits the path it resolves, so later tiers slot in without touching callers. The editor (`yamledit`) is path-addressed and knows nothing about kinds.
 
-**Operator-CR translation.** Recommenders report the operator-*generated* workload — KRR sees the Deployment `otel-collector`, or a CNPG instance Pod `mycluster-1`, not the `OpenTelemetryCollector`/`Cluster` CR that lives in the repo. Each tier-2 map carries a **match rule** (workload kind + name suffix/pattern + container→component) that rewrites the reported identity to the owning CR before discovery, collapsing instance pods into a single CR (one PR). The built-in match rules are best-effort pending a real `krr -f json` sample from those operators.
+**Operator-CR translation.** Recommenders report the operator-*generated* workload — KRR sees the Deployment `otel-collector`, or a CNPG instance Pod `mycluster-1`, not the `OpenTelemetryCollector`/`Cluster` CR that lives in the repo. Each tier-2 map carries a **match rule** (workload kind + name suffix/pattern + container→component) that rewrites the reported identity to the owning CR before discovery, collapsing instance pods into a single CR — their per-instance recommendations merged by **max**, so the busiest instance's needs win — and yielding one PR. The built-in match rules are best-effort pending a real `krr -f json` sample from those operators.
 
 ## Scope
 
