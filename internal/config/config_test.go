@@ -1,0 +1,103 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestDefaults(t *testing.T) {
+	c := Defaults()
+	if c.Recommender.Source != "krr" || c.Recommender.Input != "-" {
+		t.Errorf("recommender defaults = %+v", c.Recommender)
+	}
+	if c.Git.BaseBranch != "main" || c.Git.BranchPrefix != "rere/" || c.Git.MergeMethod != "squash" || !c.Git.AutoMerge {
+		t.Errorf("git defaults = %+v", c.Git)
+	}
+	if c.Git.Auth.TokenEnv != "GITHUB_TOKEN" {
+		t.Errorf("auth defaults = %+v", c.Git.Auth)
+	}
+	if c.Policy.DeadbandPct != 0.10 || c.Policy.MemHeadroom != 1.15 {
+		t.Errorf("policy defaults = %+v", c.Policy)
+	}
+}
+
+func writeConfig(t *testing.T, body string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "rere.yaml")
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestLoad_OverridesAndKeepsDefaults(t *testing.T) {
+	p := writeConfig(t, `
+git:
+  repo: acme/widgets
+  baseBranch: develop
+policy:
+  deadbandPct: 0.2
+`)
+	c, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.Git.Repo != "acme/widgets" || c.Git.BaseBranch != "develop" {
+		t.Errorf("overrides not applied: %+v", c.Git)
+	}
+	// Untouched fields keep defaults.
+	if c.Git.MergeMethod != "squash" || !c.Git.AutoMerge {
+		t.Errorf("defaults lost: %+v", c.Git)
+	}
+	if c.Policy.DeadbandPct != 0.2 {
+		t.Errorf("policy override lost: %v", c.Policy.DeadbandPct)
+	}
+	if c.Policy.MemHeadroom != 1.15 {
+		t.Errorf("policy default lost: %v", c.Policy.MemHeadroom)
+	}
+}
+
+func TestValidate_RejectsInlineToken(t *testing.T) {
+	p := writeConfig(t, `
+git:
+  repo: acme/widgets
+  auth:
+    tokenEnv: ghp_realtokenlookingvalue000000000000000000
+`)
+	if _, err := Load(p); err == nil {
+		t.Fatal("expected error for inline-looking token in tokenEnv")
+	}
+}
+
+func TestValidate_LiveRequiresRepo(t *testing.T) {
+	p := writeConfig(t, `
+git:
+  repo: ""
+`)
+	if _, err := Load(p); err == nil {
+		t.Fatal("expected error: live mode requires git.repo")
+	}
+}
+
+func TestValidate_DryRunRelaxesRequirements(t *testing.T) {
+	p := writeConfig(t, `
+dryRun: true
+git:
+  repo: ""
+`)
+	if _, err := Load(p); err != nil {
+		t.Fatalf("dry-run should not require repo: %v", err)
+	}
+}
+
+func TestValidate_UnsupportedRecommender(t *testing.T) {
+	p := writeConfig(t, `
+dryRun: true
+recommender:
+  source: vpa
+`)
+	if _, err := Load(p); err == nil {
+		t.Fatal("expected error for unsupported recommender source")
+	}
+}
