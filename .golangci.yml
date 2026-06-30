@@ -1,0 +1,34 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - revive
+    - errorlint
+    - bodyclose
+    - misspell
+    - unconvert
+  settings:
+    errcheck:
+      # User-facing CLI output to a known writer; a failed stdout write is not
+      # actionable.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+  exclusions:
+    generated: lax
+    rules:
+      # Test files may take liberties (long lines, unchecked errors in fixtures).
+      - path: _test\.go
+        linters:
+          - errcheck
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/Ca-moes/rere
