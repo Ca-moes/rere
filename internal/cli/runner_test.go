@@ -15,6 +15,7 @@ import (
 	"github.com/Ca-moes/rere/internal/adapter"
 	"github.com/Ca-moes/rere/internal/config"
 	"github.com/Ca-moes/rere/internal/discover"
+	"github.com/Ca-moes/rere/internal/fieldmap"
 	"github.com/Ca-moes/rere/internal/pr"
 )
 
@@ -289,6 +290,57 @@ func TestRunner_AutoMergeFailureNotFatal(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(out.String()), "auto-merge") {
 		t.Errorf("should warn about auto-merge:\n%s", out.String())
+	}
+}
+
+func TestRunner_Tier2OperatorCR(t *testing.T) {
+	// The recommender names the generated Deployment "otel-collector"; rere must
+	// translate that to the OpenTelemetryCollector CR "otel" and edit its
+	// spec.resources — proving the full tier-2 chain end-to-end.
+	dir := t.TempDir()
+	cr := `apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: otel
+  namespace: default
+spec:
+  mode: deployment
+  resources:
+    requests:
+      cpu: "1"
+      memory: 256Mi
+  config: |
+    receivers: {}
+`
+	path := filepath.Join(dir, "otel.yaml")
+	if err := os.WriteFile(path, []byte(cr), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Defaults()
+	cfg.DryRun = true
+	maps := fieldmap.MergedMaps(fieldmap.MapConfig{})
+	var out bytes.Buffer
+	r := &Runner{
+		Cfg:        cfg,
+		Repo:       dir,
+		Discoverer: &discover.RepoScanner{Root: dir},
+		Mappers:    []fieldmap.FieldMapper{fieldmap.Tier2{Maps: maps}, fieldmap.Tier1{}},
+		FieldMaps:  maps,
+		Out:        &out,
+	}
+	targets := []adapter.Target{{
+		Namespace: "default", Kind: "Deployment", Name: "otel-collector", Container: "otc-container",
+		Recommended: adapter.Recommended{Requests: adapter.ResourceValues{CPU: q("250m")}},
+	}}
+	if err := r.Run(context.Background(), targets); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(out.String(), "250m") {
+		t.Errorf("expected the CR's spec.resources to be downsized to 250m:\n%s", out.String())
+	}
+	after, _ := os.ReadFile(path)
+	if string(after) != cr {
+		t.Error("dry-run modified the CR on disk")
 	}
 }
 

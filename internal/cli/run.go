@@ -32,6 +32,7 @@ type Runner struct {
 	Discoverer discover.Discoverer
 	Opener     pr.Opener
 	Mappers    []fieldmap.FieldMapper
+	FieldMaps  fieldmap.MapConfig // merged maps, for translating CR workloads pre-grouping
 	Out        io.Writer
 }
 
@@ -50,6 +51,25 @@ type workloadGroup struct {
 	Kind      string
 	Name      string
 	Targets   []adapter.Target
+}
+
+// translateTargets rewrites operator-CR workloads (named by the recommender as
+// the generated Deployment/Pod) to their owning CR identity before grouping, so
+// instance pods collapse into one CR. Raw workloads pass through. A no-op when
+// no field maps are configured.
+func (r *Runner) translateTargets(targets []adapter.Target) []adapter.Target {
+	if len(r.FieldMaps.Maps) == 0 {
+		return targets
+	}
+	out := make([]adapter.Target, len(targets))
+	for i, t := range targets {
+		if ct, ok := fieldmap.TranslateTarget(t, r.FieldMaps); ok {
+			out[i] = ct
+		} else {
+			out[i] = t
+		}
+	}
+	return out
 }
 
 // groupByWorkload collapses per-container targets into one group per workload,
@@ -80,6 +100,7 @@ func (r *Runner) Run(ctx context.Context, targets []adapter.Target) error {
 	if len(r.Mappers) == 0 {
 		r.Mappers = []fieldmap.FieldMapper{fieldmap.Tier1{}}
 	}
+	targets = r.translateTargets(targets)
 	var failed int
 	for _, grp := range groupByWorkload(targets) {
 		if err := r.processWorkload(ctx, grp); err != nil {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/Ca-moes/rere/internal/config"
 	"github.com/Ca-moes/rere/internal/discover"
+	"github.com/Ca-moes/rere/internal/fieldmap"
 	"github.com/Ca-moes/rere/internal/pr"
 )
 
@@ -83,10 +84,13 @@ func runPipeline(ctx context.Context, out io.Writer, opts *options) error {
 		return nil
 	}
 
+	maps := fieldmap.MergedMaps(cfg.FieldMaps)
 	runner := &Runner{
 		Cfg:        cfg,
 		Repo:       opts.repoPath,
 		Discoverer: &discover.RepoScanner{Root: opts.repoPath, Include: cfg.Discover.Include, Exclude: cfg.Discover.Exclude},
+		Mappers:    []fieldmap.FieldMapper{fieldmap.Tier2{Maps: maps}, fieldmap.Tier1{}},
+		FieldMaps:  maps,
 		Out:        out,
 	}
 	if !cfg.DryRun {

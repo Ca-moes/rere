@@ -9,16 +9,18 @@ import (
 
 	"sigs.k8s.io/yaml"
 
+	"github.com/Ca-moes/rere/internal/fieldmap"
 	"github.com/Ca-moes/rere/internal/policy"
 )
 
 // Config is the full rere configuration.
 type Config struct {
-	Recommender Recommender   `json:"recommender"`
-	Git         Git           `json:"git"`
-	Policy      policy.Config `json:"policy"`
-	Discover    Discover      `json:"discover"`
-	DryRun      bool          `json:"dryRun"`
+	Recommender Recommender        `json:"recommender"`
+	Git         Git                `json:"git"`
+	Policy      policy.Config      `json:"policy"`
+	Discover    Discover           `json:"discover"`
+	FieldMaps   fieldmap.MapConfig `json:"fieldMaps"` // user maps, overlaid on the built-ins at runtime
+	DryRun      bool               `json:"dryRun"`
 }
 
 // Recommender selects the input source and its location.
@@ -104,6 +106,9 @@ func (c *Config) Validate() error {
 		if strings.HasPrefix(c.Git.Auth.TokenEnv, p) {
 			return fmt.Errorf("git.auth.tokenEnv must be the NAME of an env var, not a token value")
 		}
+	}
+	if err := c.FieldMaps.Validate(); err != nil {
+		return err
 	}
 	if !c.DryRun {
 		if c.Git.Repo == "" {
