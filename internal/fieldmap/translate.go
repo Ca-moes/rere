@@ -20,7 +20,7 @@ func TranslateTarget(t adapter.Target, maps MapConfig) (adapter.Target, bool) {
 		if cm.Match.WorkloadKind != "" && cm.Match.WorkloadKind != t.Kind {
 			continue
 		}
-		crName, ok := recoverCRName(cm.Match, t.Name)
+		crName, ok := recoverCRName(cm, t.Name)
 		if !ok {
 			continue
 		}
@@ -39,24 +39,28 @@ func TranslateTarget(t adapter.Target, maps MapConfig) (adapter.Target, bool) {
 
 // recoverCRName extracts the CR name from a generated-workload name using the
 // rule's NamePattern (first capture group) or NameSuffix (trimmed); with neither
-// set the CR name equals the workload name.
-func recoverCRName(match MatchRule, workloadName string) (string, bool) {
+// set the CR name equals the workload name. The NamePattern regexp is the one
+// MergedMaps cached; for a directly-constructed map it is compiled lazily.
+func recoverCRName(cm *CRMap, workloadName string) (string, bool) {
 	switch {
-	case match.NamePattern != "":
-		re, err := regexp.Compile(match.NamePattern)
-		if err != nil {
-			return "", false // Validate rejects bad patterns before we get here
+	case cm.Match.NamePattern != "":
+		re := cm.nameRE
+		if re == nil {
+			var err error
+			if re, err = regexp.Compile(cm.Match.NamePattern); err != nil {
+				return "", false // Validate rejects bad patterns before we get here
+			}
 		}
 		sub := re.FindStringSubmatch(workloadName)
 		if len(sub) < 2 {
 			return "", false
 		}
 		return sub[1], true
-	case match.NameSuffix != "":
-		if !strings.HasSuffix(workloadName, match.NameSuffix) {
+	case cm.Match.NameSuffix != "":
+		if !strings.HasSuffix(workloadName, cm.Match.NameSuffix) {
 			return "", false
 		}
-		return strings.TrimSuffix(workloadName, match.NameSuffix), true
+		return strings.TrimSuffix(workloadName, cm.Match.NameSuffix), true
 	default:
 		return workloadName, true
 	}

@@ -23,6 +23,10 @@ type CRMap struct {
 	ResourcePath []string    `json:"resourcePath,omitempty"`
 	Components   []Component `json:"components,omitempty"`
 	Match        MatchRule   `json:"match,omitempty"`
+
+	// nameRE is the compiled Match.NamePattern, cached by MergedMaps so
+	// translation does not recompile it per target. Unexported: not serialized.
+	nameRE *regexp.Regexp
 }
 
 // Component is one named resource-bearing subtree within a multi-component CR.
@@ -102,6 +106,14 @@ func MergedMaps(user MapConfig) MapConfig {
 			continue
 		}
 		out.Maps = append(out.Maps, um)
+	}
+	// Compile NamePatterns once here so translation reuses them. Patterns are
+	// validated before this (config.Validate / known-good built-ins); a stray
+	// bad one leaves nameRE nil and translation falls back to a lazy compile.
+	for i := range out.Maps {
+		if p := out.Maps[i].Match.NamePattern; p != "" {
+			out.Maps[i].nameRE, _ = regexp.Compile(p)
+		}
 	}
 	return out
 }

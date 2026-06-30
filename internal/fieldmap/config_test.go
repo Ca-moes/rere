@@ -108,3 +108,11 @@ func TestMergedMaps(t *testing.T) {
 		t.Error("OTel built-in lost in merge")
 	}
 }
+
+func TestMergedMaps_CompilesNamePattern(t *testing.T) {
+	merged := MergedMaps(MapConfig{})
+	cnpg := findCRMap(merged, "postgresql.cnpg.io", "Cluster") // has a NamePattern
+	if cnpg == nil || cnpg.nameRE == nil {
+		t.Fatal("MergedMaps must precompile and cache the NamePattern regexp")
+	}
+}
