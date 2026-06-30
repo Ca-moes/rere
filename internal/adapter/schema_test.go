@@ -75,6 +75,33 @@ func TestTargetValidate(t *testing.T) {
 	}
 }
 
+func TestRecommended_Max(t *testing.T) {
+	a := Recommended{
+		Requests: ResourceValues{CPU: q("250m"), Mem: q("128Mi")},
+		Limits:   ResourceValues{CPU: q("500m")},
+	}
+	b := Recommended{
+		Requests: ResourceValues{CPU: q("1"), Mem: q("64Mi")},
+		Limits:   ResourceValues{Mem: q("256Mi")},
+	}
+	got := a.Max(b)
+	if got.Requests.CPU.Cmp(resource.MustParse("1")) != 0 {
+		t.Errorf("requests.cpu = %v, want 1", got.Requests.CPU)
+	}
+	if got.Requests.Mem.Cmp(resource.MustParse("128Mi")) != 0 {
+		t.Errorf("requests.mem = %v, want 128Mi", got.Requests.Mem)
+	}
+	if got.Limits.CPU == nil || got.Limits.CPU.Cmp(resource.MustParse("500m")) != 0 {
+		t.Errorf("limits.cpu = %v, want 500m", got.Limits.CPU)
+	}
+	if got.Limits.Mem == nil || got.Limits.Mem.Cmp(resource.MustParse("256Mi")) != 0 {
+		t.Errorf("limits.mem = %v, want 256Mi", got.Limits.Mem)
+	}
+	if !(Recommended{}).Max(Recommended{}).empty() {
+		t.Error("max of two empty recommendations should be empty")
+	}
+}
+
 func TestQuantityRoundTrip(t *testing.T) {
 	for _, s := range []string{"250m", "2", "128Mi", "1Gi", "1500m"} {
 		orig := resource.MustParse(s)

@@ -293,6 +293,75 @@ func TestRunner_AutoMergeFailureNotFatal(t *testing.T) {
 	}
 }
 
+func TestMergeByContainer(t *testing.T) {
+	targets := []adapter.Target{
+		{Kind: "Cluster", Name: "pg", Container: "", Recommended: adapter.Recommended{Requests: adapter.ResourceValues{CPU: q("800m")}}},
+		{Kind: "Cluster", Name: "pg", Container: "", Recommended: adapter.Recommended{Requests: adapter.ResourceValues{CPU: q("300m")}}},
+		{Kind: "Deployment", Name: "web", Container: "app", Recommended: adapter.Recommended{Requests: adapter.ResourceValues{CPU: q("100m")}}},
+		{Kind: "Deployment", Name: "web", Container: "sidecar", Recommended: adapter.Recommended{Requests: adapter.ResourceValues{CPU: q("50m")}}},
+	}
+	got := mergeByContainer(targets)
+	if len(got) != 3 {
+		t.Fatalf("got %d merged targets, want 3 (one per distinct container)", len(got))
+	}
+	// The two "" CR instances collapse to one with the max (800m), not 300m.
+	if got[0].Container != "" || got[0].Recommended.Requests.CPU.Cmp(resource.MustParse("800m")) != 0 {
+		t.Errorf("collapsed CR target = %+v, want container=\"\" cpu=800m", got[0].Recommended.Requests)
+	}
+	// Distinct tier-1 containers are untouched.
+	if got[1].Container != "app" || got[2].Container != "sidecar" {
+		t.Errorf("distinct containers were merged: %+v", got)
+	}
+}
+
+func TestRunner_Tier2CollapsesInstancesByMax(t *testing.T) {
+	dir := t.TempDir()
+	cr := `apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: mycluster
+  namespace: default
+spec:
+  instances: 2
+  resources:
+    requests:
+      cpu: "1"
+      memory: 1Gi
+`
+	path := filepath.Join(dir, "pg.yaml")
+	if err := os.WriteFile(path, []byte(cr), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Defaults()
+	cfg.DryRun = true
+	maps := fieldmap.MergedMaps(fieldmap.MapConfig{})
+	var out bytes.Buffer
+	r := &Runner{
+		Cfg: cfg, Repo: dir,
+		Discoverer: &discover.RepoScanner{Root: dir},
+		Mappers:    []fieldmap.FieldMapper{fieldmap.Tier2{Maps: maps}, fieldmap.Tier1{}},
+		FieldMaps:  maps,
+		Out:        &out,
+	}
+	// Two instance pods with the busier one FIRST and the lower recommendation
+	// reported LAST: without max-merge, last-write-wins would pick 300m.
+	targets := []adapter.Target{
+		{Namespace: "default", Kind: "Pod", Name: "mycluster-1", Container: "postgres",
+			Recommended: adapter.Recommended{Requests: adapter.ResourceValues{CPU: q("800m")}}},
+		{Namespace: "default", Kind: "Pod", Name: "mycluster-2", Container: "postgres",
+			Recommended: adapter.Recommended{Requests: adapter.ResourceValues{CPU: q("300m")}}},
+	}
+	if err := r.Run(context.Background(), targets); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(out.String(), "800m") {
+		t.Errorf("the busiest instance's recommendation (800m) must win:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "300m") {
+		t.Errorf("the lower last-reported recommendation (300m) must not win:\n%s", out.String())
+	}
+}
+
 func TestRunner_Tier2OperatorCR(t *testing.T) {
 	// The recommender names the generated Deployment "otel-collector"; rere must
 	// translate that to the OpenTelemetryCollector CR "otel" and edit its

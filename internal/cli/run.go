@@ -151,7 +151,7 @@ func (r *Runner) processWorkload(ctx context.Context, grp workloadGroup) error {
 	}
 
 	var edits []yamledit.PathEdit
-	for _, t := range grp.Targets {
+	for _, t := range mergeByContainer(grp.Targets) {
 		tg := fieldmap.Target{Kind: grp.Kind, Container: t.Container}
 		paths, err := resolveCells(mapper, root, tg)
 		if err != nil {
@@ -247,6 +247,27 @@ func (r *Runner) openPR(ctx context.Context, grp workloadGroup, path, content st
 		return fmt.Errorf("open PR for %s: %w", workloadRef(grp), err)
 	}
 	return nil
+}
+
+// mergeByContainer collapses targets that resolve to the same container or
+// component into one, taking the max recommendation per field. Several
+// operator-CR instance pods (e.g. CNPG mycluster-1..N) translate to one CR with
+// the same component, so without this their shared resources block would get
+// last-write-wins edits from whichever instance the recommender reported last —
+// dropping the busier replicas' needs. Distinct containers (tier-1
+// multi-container pods) are left untouched.
+func mergeByContainer(targets []adapter.Target) []adapter.Target {
+	idx := map[string]int{}
+	var out []adapter.Target
+	for _, t := range targets {
+		if i, ok := idx[t.Container]; ok {
+			out[i].Recommended = out[i].Recommended.Max(t.Recommended)
+			continue
+		}
+		idx[t.Container] = len(out)
+		out = append(out, t)
+	}
+	return out
 }
 
 // resolveCells resolves the four requests/limits × cpu/memory paths for a
