@@ -1,0 +1,14 @@
+# rere-specific tag extensions on top of the framework's closed vocab.
+# Same structure as taxonomy/tags.yaml; the validator accepts the union.
+# Add a tag here before using it in a doc's `tags:` list.
+categories:
+  domain:
+    - kubernetes
+    - gitops
+    - flux
+    - helm
+    - kustomize
+    - right-sizing
+    - krr
+    - renovate
+    - yaml

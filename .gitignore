@@ -1,0 +1,25 @@
+# Binaries
+/rere
+/dist/
+*.exe
+*.test
+
+# Go
+/vendor/
+go.work
+go.work.sum
+
+# Test & coverage output
+*.out
+coverage.txt
+coverage.out
+coverage.html
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Conductor workspace scratch (collaboration only; not part of the project).
+# Also ignored locally via .git/info/exclude, but kept here so it travels with the repo.
+.context/
