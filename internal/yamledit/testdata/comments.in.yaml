@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web # the web frontend
+spec:
+  replicas: 3
+  template:
+    spec:
+      containers:
+        - name: web
+          image: nginx:1.27 # pinned
+          resources:
+            # tuned by rere
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              memory: 128Mi
