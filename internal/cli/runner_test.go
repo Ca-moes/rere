@@ -363,11 +363,25 @@ spec:
 }
 
 func TestRunner_FalsePositiveTranslationFallsBackToTier1(t *testing.T) {
-	// A plain Deployment named "metrics-collector" matches the OTel built-in's
-	// "-collector" suffix, but there is no OpenTelemetryCollector CR. It must
-	// still be right-sized by tier-1, not silently skipped (regression guard).
+	// A plain Deployment named "metrics-collector" whose container even matches
+	// the OTel built-in (otc-container + "-collector" suffix), but with no
+	// OpenTelemetryCollector CR in the repo. crResolvable must reject the rewrite
+	// so tier-1 still right-sizes it, rather than silently skipping it.
 	dir := t.TempDir()
-	dep := strings.Replace(deployManifest, "name: web", "name: metrics-collector", 1)
+	dep := `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metrics-collector
+spec:
+  template:
+    spec:
+      containers:
+        - name: otc-container
+          resources:
+            requests:
+              cpu: "1"
+              memory: 512Mi
+`
 	path := filepath.Join(dir, "dep.yaml")
 	if err := os.WriteFile(path, []byte(dep), 0o600); err != nil {
 		t.Fatal(err)
@@ -384,14 +398,14 @@ func TestRunner_FalsePositiveTranslationFallsBackToTier1(t *testing.T) {
 		Out:        &out,
 	}
 	targets := []adapter.Target{{
-		Namespace: "default", Kind: "Deployment", Name: "metrics-collector", Container: "web",
+		Namespace: "default", Kind: "Deployment", Name: "metrics-collector", Container: "otc-container",
 		Recommended: adapter.Recommended{Requests: adapter.ResourceValues{CPU: q("250m")}},
 	}}
 	if err := r.Run(context.Background(), targets); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if !strings.Contains(out.String(), "250m") {
-		t.Errorf("a Deployment matching a built-in suffix but with no CR must be tier-1 right-sized:\n%s", out.String())
+		t.Errorf("a Deployment matching a built-in rule but with no CR must be tier-1 right-sized:\n%s", out.String())
 	}
 }
 

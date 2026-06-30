@@ -72,8 +72,12 @@ func (c MapConfig) Validate() error {
 			}
 		}
 		if m.Match.NamePattern != "" {
-			if _, err := regexp.Compile(m.Match.NamePattern); err != nil {
+			re, err := regexp.Compile(m.Match.NamePattern)
+			if err != nil {
 				return fmt.Errorf("fieldMaps.maps[%d] (%s/%s): invalid namePattern: %w", i, m.Group, m.Kind, err)
+			}
+			if re.NumSubexp() < 1 {
+				return fmt.Errorf("fieldMaps.maps[%d] (%s/%s): namePattern must have a capture group for the CR name", i, m.Group, m.Kind)
 			}
 		}
 		key := m.Group + "/" + m.Kind
@@ -95,17 +99,19 @@ func findCRMap(c MapConfig, group, kind string) *CRMap {
 	return nil
 }
 
-// MergedMaps overlays user maps on the built-ins: a user map with the same
-// (group, kind) replaces the built-in, and new user maps are appended. Built-ins
-// live in code so a config-less binary still right-sizes the common operators.
+// MergedMaps overlays user maps on the built-ins. User maps come FIRST so they
+// take precedence in translation (TranslateTarget returns on first match): a
+// user operator whose generated-workload names collide with a built-in
+// heuristic (the `-collector` suffix, `-<digits>` pods) resolves to the user's
+// CR, not the built-in's. A built-in is dropped when a user map shares its
+// (group, kind). Built-ins live in code so a config-less binary still
+// right-sizes the common operators.
 func MergedMaps(user MapConfig) MapConfig {
-	out := MapConfig{Maps: append([]CRMap{}, BuiltinMaps().Maps...)}
-	for _, um := range user.Maps {
-		if existing := findCRMap(out, um.Group, um.Kind); existing != nil {
-			*existing = um
-			continue
+	out := MapConfig{Maps: append([]CRMap{}, user.Maps...)}
+	for _, bm := range BuiltinMaps().Maps {
+		if findCRMap(out, bm.Group, bm.Kind) == nil {
+			out.Maps = append(out.Maps, bm)
 		}
-		out.Maps = append(out.Maps, um)
 	}
 	// Compile NamePatterns once here so translation reuses them. Patterns are
 	// validated before this (config.Validate / known-good built-ins); a stray

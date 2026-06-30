@@ -50,6 +50,17 @@ func TestMapConfig_Validate(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "name pattern without capture group",
+			cfg: MapConfig{Maps: []CRMap{{Group: "example.com", Kind: "Foo", ResourcePath: []string{"spec", "resources"},
+				Match: MatchRule{NamePattern: "foo-.*"}}}},
+			wantErr: true,
+		},
+		{
+			name: "name pattern with capture group",
+			cfg: MapConfig{Maps: []CRMap{{Group: "example.com", Kind: "Foo", ResourcePath: []string{"spec", "resources"},
+				Match: MatchRule{NamePattern: "^(.*)-[0-9]+$"}}}},
+		},
+		{
 			name: "duplicate group+kind",
 			cfg: MapConfig{Maps: []CRMap{
 				{Group: "example.com", Kind: "Foo", ResourcePath: []string{"spec", "resources"}},

@@ -20,13 +20,18 @@ func TranslateTarget(t adapter.Target, maps MapConfig) (adapter.Target, bool) {
 		if cm.Match.WorkloadKind != "" && cm.Match.WorkloadKind != t.Kind {
 			continue
 		}
+		component, mapped := cm.Match.ContainerToComponent[t.Container]
+		// When a map enumerates containers, translate only the ones it names: an
+		// unlisted container (e.g. a CNPG pod's monitoring sidecar) is not
+		// represented by this CR's resources, and for a single-component map it
+		// would otherwise resolve to the same spec.resources path as the mapped
+		// container and clobber its edit.
+		if len(cm.Match.ContainerToComponent) > 0 && !mapped {
+			continue
+		}
 		crName, ok := recoverCRName(cm, t.Name)
 		if !ok {
 			continue
-		}
-		component := t.Container
-		if mapped, found := cm.Match.ContainerToComponent[t.Container]; found {
-			component = mapped
 		}
 		out := t
 		out.Kind = cm.Kind
