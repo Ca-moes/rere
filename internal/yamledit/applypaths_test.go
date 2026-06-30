@@ -2,6 +2,8 @@ package yamledit
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -82,7 +84,14 @@ func TestApplyPathsGolden(t *testing.T) {
 			if changed != c.wantChanged {
 				t.Errorf("changed = %v, want %v", changed, c.wantChanged)
 			}
-			// Reuse the legacy goldens: the path editor must produce identical bytes.
+			// Regenerate with UPDATE_GOLDEN=1 go test ./internal/yamledit/ and
+			// review the diff by hand. Tier-1 goldens must never change.
+			goldenPath := filepath.Join("testdata", c.name+".out.yaml")
+			if os.Getenv("UPDATE_GOLDEN") != "" {
+				if err := os.WriteFile(goldenPath, out.Bytes(), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
 			want := readFixture(t, c.name+".out.yaml")
 			if !bytes.Equal(out.Bytes(), want) {
 				t.Errorf("output mismatch:\n--- got ---\n%s\n--- want ---\n%s", out.Bytes(), want)
