@@ -32,6 +32,7 @@ type Runner struct {
 	Discoverer discover.Discoverer
 	Opener     pr.Opener
 	Mappers    []fieldmap.FieldMapper
+	FieldMaps  fieldmap.MapConfig // merged maps, for translating CR workloads pre-grouping
 	Out        io.Writer
 }
 
@@ -50,6 +51,42 @@ type workloadGroup struct {
 	Kind      string
 	Name      string
 	Targets   []adapter.Target
+}
+
+// translateTargets rewrites operator-CR workloads (named by the recommender as
+// the generated Deployment/Pod) to their owning CR identity before grouping, so
+// instance pods collapse into one CR. Raw workloads pass through. A no-op when
+// no field maps are configured.
+//
+// The rewrite is committed only when the target CR actually exists in the repo:
+// a real workload whose name coincidentally matches a built-in match rule (e.g.
+// a Deployment "metrics-collector", or a bare Pod "foo-3") would otherwise be
+// rewritten to a nonexistent CR and silently skipped, instead of being
+// right-sized by tier-1.
+func (r *Runner) translateTargets(ctx context.Context, targets []adapter.Target) []adapter.Target {
+	if len(r.FieldMaps.Maps) == 0 {
+		return targets
+	}
+	out := make([]adapter.Target, len(targets))
+	for i, t := range targets {
+		if ct, ok := fieldmap.TranslateTarget(t, r.FieldMaps); ok && r.crResolvable(ctx, ct) {
+			out[i] = ct
+		} else {
+			out[i] = t
+		}
+	}
+	return out
+}
+
+// crResolvable reports whether a translated CR identity matches a manifest in
+// the repo. Anything but a definitive not-found counts as resolvable — a found
+// or even ambiguous CR is a real CR (ambiguity is surfaced later by
+// processWorkload), and a transient discover error is better handled there than
+// by silently falling back — so we only revert to the untranslated workload
+// when the CR is genuinely absent.
+func (r *Runner) crResolvable(ctx context.Context, t adapter.Target) bool {
+	_, err := r.Discoverer.Discover(ctx, discover.Workload{Namespace: t.Namespace, Kind: t.Kind, Name: t.Name})
+	return !errors.Is(err, discover.ErrNotFound)
 }
 
 // groupByWorkload collapses per-container targets into one group per workload,
@@ -80,6 +117,7 @@ func (r *Runner) Run(ctx context.Context, targets []adapter.Target) error {
 	if len(r.Mappers) == 0 {
 		r.Mappers = []fieldmap.FieldMapper{fieldmap.Tier1{}}
 	}
+	targets = r.translateTargets(ctx, targets)
 	var failed int
 	for _, grp := range groupByWorkload(targets) {
 		if err := r.processWorkload(ctx, grp); err != nil {
@@ -130,7 +168,7 @@ func (r *Runner) processWorkload(ctx context.Context, grp workloadGroup) error {
 	}
 
 	var edits []yamledit.PathEdit
-	for _, t := range grp.Targets {
+	for _, t := range mergeByContainer(grp.Targets) {
 		tg := fieldmap.Target{Kind: grp.Kind, Container: t.Container}
 		paths, err := resolveCells(mapper, root, tg)
 		if err != nil {
@@ -226,6 +264,27 @@ func (r *Runner) openPR(ctx context.Context, grp workloadGroup, path, content st
 		return fmt.Errorf("open PR for %s: %w", workloadRef(grp), err)
 	}
 	return nil
+}
+
+// mergeByContainer collapses targets that resolve to the same container or
+// component into one, taking the max recommendation per field. Several
+// operator-CR instance pods (e.g. CNPG mycluster-1..N) translate to one CR with
+// the same component, so without this their shared resources block would get
+// last-write-wins edits from whichever instance the recommender reported last —
+// dropping the busier replicas' needs. Distinct containers (tier-1
+// multi-container pods) are left untouched.
+func mergeByContainer(targets []adapter.Target) []adapter.Target {
+	idx := map[string]int{}
+	var out []adapter.Target
+	for _, t := range targets {
+		if i, ok := idx[t.Container]; ok {
+			out[i].Recommended = out[i].Recommended.Max(t.Recommended)
+			continue
+		}
+		idx[t.Container] = len(out)
+		out = append(out, t)
+	}
+	return out
 }
 
 // resolveCells resolves the four requests/limits × cpu/memory paths for a

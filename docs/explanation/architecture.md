@@ -44,10 +44,12 @@ A thin **cli** layer (cobra, [ADR-0005](../adrs/0005-cobra-cli-framework.md)) or
 ## The three field-map tiers
 
 - **Tier 1** raw Deployment/StatefulSet/DaemonSet → PodSpec path `spec.template.spec.containers[name==X].resources`, **inferred, zero-config**.
-- **Tier 2** operator CR → **config-driven** with **built-in maps** (e.g. CNPG `Cluster`, OpenTelemetryCollector). CRD-schema auto-discovery is deferred.
+- **Tier 2** operator CR → **config-driven** field maps (`fieldMaps` in config) with **built-ins** for CNPG `Cluster` and `OpenTelemetryCollector` (both `spec.resources`), user-extensible. CRD-schema auto-discovery is deferred.
 - **Tier 3** HelmRelease `values:` → **per-chart config** with built-in maps for common charts, so most repos need none.
 
-`FieldMapper` is one interface; later tiers slot in without touching callers.
+`FieldMapper` is one interface (`Supports` / `ResolvePath` / `Resolve`); the run loop selects the first mapper that supports a manifest and edits the path it resolves, so later tiers slot in without touching callers. The editor (`yamledit`) is path-addressed and knows nothing about kinds.
+
+**Operator-CR translation.** Recommenders report the operator-*generated* workload — KRR sees the Deployment `otel-collector`, or a CNPG instance Pod `mycluster-1`, not the `OpenTelemetryCollector`/`Cluster` CR that lives in the repo. Each tier-2 map carries a **match rule** (workload kind + name suffix/pattern + container→component) that rewrites the reported identity to the owning CR before discovery, collapsing instance pods into a single CR — their per-instance recommendations merged by **max**, so the busiest instance's needs win — and yielding one PR. The rewrite is committed only when that CR actually exists in the repo; a raw workload whose name coincidentally matches a built-in rule (a Deployment `metrics-collector`, a Pod `foo-3`) falls back to tier-1. The built-in match rules are best-effort pending a real `krr -f json` sample from those operators.
 
 ## Scope
 

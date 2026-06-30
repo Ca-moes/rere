@@ -54,14 +54,7 @@ func (Tier1) ResolvePath(root *yaml.RNode, t Target, f ResourceField) ([]string,
 // (section, name) order. It errors if the container is absent (no phantom
 // creation).
 func (m Tier1) Resolve(root *yaml.RNode, t Target, want map[ResourceField]string) ([]ResolvedEdit, error) {
-	edits := make([]ResolvedEdit, 0, len(want))
-	for f, v := range want {
-		path, err := m.ResolvePath(root, t, f)
-		if err != nil {
-			return nil, err
-		}
-		edits = append(edits, ResolvedEdit{Field: f, Path: path, Value: v})
-	}
-	sortEdits(edits)
-	return edits, nil
+	return resolveWant(func(f ResourceField) ([]string, error) {
+		return m.ResolvePath(root, t, f)
+	}, want)
 }

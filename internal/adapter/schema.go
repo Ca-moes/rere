@@ -20,6 +20,24 @@ type ResourceValues struct {
 
 func (rv ResourceValues) empty() bool { return rv.CPU == nil && rv.Mem == nil }
 
+// Max returns the per-field maximum of rv and other, treating nil as "no value".
+func (rv ResourceValues) Max(other ResourceValues) ResourceValues {
+	return ResourceValues{CPU: maxQuantity(rv.CPU, other.CPU), Mem: maxQuantity(rv.Mem, other.Mem)}
+}
+
+func maxQuantity(a, b *resource.Quantity) *resource.Quantity {
+	switch {
+	case a == nil:
+		return b
+	case b == nil:
+		return a
+	case a.Cmp(*b) >= 0:
+		return a
+	default:
+		return b
+	}
+}
+
 // Recommended is a full recommendation for one container: requests and limits.
 type Recommended struct {
 	Requests ResourceValues
@@ -27,6 +45,17 @@ type Recommended struct {
 }
 
 func (r Recommended) empty() bool { return r.Requests.empty() && r.Limits.empty() }
+
+// Max returns the per-field maximum of r and other. When several recommender
+// reports collapse onto one shared resources block (e.g. operator-CR instance
+// pods), merging by max ensures the busiest instance's needs are met rather than
+// whichever report was processed last.
+func (r Recommended) Max(other Recommended) Recommended {
+	return Recommended{
+		Requests: r.Requests.Max(other.Requests),
+		Limits:   r.Limits.Max(other.Limits),
+	}
+}
 
 // Target is one (workload, container) pair with its recommended resources.
 type Target struct {

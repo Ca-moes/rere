@@ -71,6 +71,31 @@ func TestApplyPathsGolden(t *testing.T) {
 			name: "notfound", kind: "Deployment", mName: "web", wantChanged: false,
 			edits: []PathEdit{{Path: tier1Path("Deployment", "ghost", "requests", "cpu"), Value: "250m"}},
 		},
+		// Tier-2 operator CRs: resources at a config-driven path (no container
+		// selector). These prove comments and large sibling blocks survive.
+		{
+			name: "cnpg", kind: "Cluster", mName: "mycluster", wantChanged: true,
+			edits: []PathEdit{
+				{Path: []string{"spec", "resources", "requests", "cpu"}, Value: "250m"},
+				{Path: []string{"spec", "resources", "requests", "memory"}, Value: "295Mi"},
+				{Path: []string{"spec", "resources", "limits", "cpu"}, Delete: true},
+				{Path: []string{"spec", "resources", "limits", "memory"}, Value: "295Mi"},
+			},
+		},
+		{
+			name: "otelcol", kind: "OpenTelemetryCollector", mName: "otel", wantChanged: true,
+			edits: []PathEdit{
+				{Path: []string{"spec", "resources", "requests", "cpu"}, Value: "250m"},
+				{Path: []string{"spec", "resources", "requests", "memory"}, Value: "295Mi"},
+			},
+		},
+		{
+			name: "crcreate", kind: "Cluster", mName: "fresh", wantChanged: true,
+			edits: []PathEdit{
+				{Path: []string{"spec", "resources", "requests", "cpu"}, Value: "250m"},
+				{Path: []string{"spec", "resources", "requests", "memory"}, Value: "295Mi"},
+			},
+		},
 	}
 
 	for _, c := range cases {

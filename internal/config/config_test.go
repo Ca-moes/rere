@@ -31,6 +31,41 @@ func writeConfig(t *testing.T, body string) string {
 	return p
 }
 
+func TestValidate_FieldMaps(t *testing.T) {
+	// Neither resourcePath nor components -> invalid.
+	bad := writeConfig(t, `
+recommender:
+  source: krr
+dryRun: true
+fieldMaps:
+  maps:
+    - group: example.com
+      kind: Foo
+`)
+	if _, err := Load(bad); err == nil {
+		t.Error("expected invalid fieldMaps to fail Load")
+	}
+
+	// A well-formed user map parses (and merges over built-ins at runtime).
+	good := writeConfig(t, `
+recommender:
+  source: krr
+dryRun: true
+fieldMaps:
+  maps:
+    - group: example.com
+      kind: Foo
+      resourcePath: [spec, resources]
+`)
+	cfg, err := Load(good)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.FieldMaps.Maps) != 1 || cfg.FieldMaps.Maps[0].Kind != "Foo" {
+		t.Errorf("fieldMaps not parsed: %+v", cfg.FieldMaps)
+	}
+}
+
 func TestLoad_OverridesAndKeepsDefaults(t *testing.T) {
 	p := writeConfig(t, `
 git:

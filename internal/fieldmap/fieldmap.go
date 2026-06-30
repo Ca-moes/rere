@@ -46,6 +46,22 @@ type FieldMapper interface {
 	Resolve(root *yaml.RNode, t Target, want map[ResourceField]string) ([]ResolvedEdit, error)
 }
 
+// resolveWant builds a ResolvedEdit per wanted field by resolving each cell's
+// path, in deterministic (section, name) order. Shared by every tier so Resolve
+// is a one-liner over its ResolvePath.
+func resolveWant(resolve func(ResourceField) ([]string, error), want map[ResourceField]string) ([]ResolvedEdit, error) {
+	edits := make([]ResolvedEdit, 0, len(want))
+	for f, v := range want {
+		path, err := resolve(f)
+		if err != nil {
+			return nil, err
+		}
+		edits = append(edits, ResolvedEdit{Field: f, Path: path, Value: v})
+	}
+	sortEdits(edits)
+	return edits, nil
+}
+
 // sortEdits orders edits deterministically by (section, name) — limits before
 // requests, cpu before memory — so output is stable across runs. Shared by all
 // tiers.
