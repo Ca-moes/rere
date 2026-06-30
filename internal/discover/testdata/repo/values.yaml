@@ -1,0 +1,6 @@
+# A Helm values file: no kind/metadata, must be ignored by the scanner.
+replicaCount: 2
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
