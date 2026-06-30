@@ -1,0 +1,27 @@
+{
+  "scans": [
+    {
+      "object": {
+        "namespace": "default",
+        "kind": "Deployment",
+        "name": "web",
+        "container": "app",
+        "allocations": {
+          "requests": {"cpu": 1.0, "memory": 1073741824},
+          "limits": {"cpu": 2.0, "memory": 1073741824}
+        }
+      },
+      "recommended": {
+        "requests": {
+          "cpu": {"value": 0.25, "severity": "WARNING"},
+          "memory": {"value": 268435456, "severity": "WARNING"}
+        },
+        "limits": {
+          "cpu": {"value": null, "severity": "OK"},
+          "memory": {"value": 268435456, "severity": "OK"}
+        }
+      },
+      "severity": "WARNING"
+    }
+  ]
+}
