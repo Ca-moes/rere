@@ -1,0 +1,11 @@
+{
+  "scans": [
+    {
+      "object": {"namespace": "batch", "kind": "GroupedJob", "name": "nightly", "container": "run"},
+      "recommended": {
+        "requests": {"cpu": {"value": 0.25, "severity": "OK"}, "memory": {"value": 134217728, "severity": "OK"}},
+        "limits": {"cpu": {"value": null, "severity": "OK"}, "memory": {"value": 134217728, "severity": "OK"}}
+      }
+    }
+  ]
+}
