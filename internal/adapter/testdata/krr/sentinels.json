@@ -1,0 +1,17 @@
+{
+  "scans": [
+    {
+      "object": {"namespace": "default", "kind": "Deployment", "name": "worker", "container": "worker"},
+      "recommended": {
+        "requests": {
+          "cpu": {"value": "?", "severity": "CRITICAL"},
+          "memory": {"value": "unset", "severity": "CRITICAL"}
+        },
+        "limits": {
+          "cpu": null,
+          "memory": 134217728
+        }
+      }
+    }
+  ]
+}

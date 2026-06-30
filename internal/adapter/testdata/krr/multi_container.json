@@ -1,0 +1,18 @@
+{
+  "scans": [
+    {
+      "object": {"namespace": "prod", "kind": "Deployment", "name": "api", "container": "app"},
+      "recommended": {
+        "requests": {"cpu": {"value": 0.75, "severity": "OK"}, "memory": {"value": 402653184, "severity": "OK"}},
+        "limits": {"cpu": {"value": null, "severity": "OK"}, "memory": {"value": 402653184, "severity": "OK"}}
+      }
+    },
+    {
+      "object": {"namespace": "prod", "kind": "Deployment", "name": "api", "container": "sidecar"},
+      "recommended": {
+        "requests": {"cpu": {"value": 0.05, "severity": "OK"}, "memory": {"value": 33554432, "severity": "OK"}},
+        "limits": {"cpu": {"value": null, "severity": "OK"}, "memory": {"value": 33554432, "severity": "OK"}}
+      }
+    }
+  ]
+}

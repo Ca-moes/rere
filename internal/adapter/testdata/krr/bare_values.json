@@ -1,0 +1,11 @@
+{
+  "scans": [
+    {
+      "object": {"namespace": "default", "kind": "StatefulSet", "name": "db", "container": "db"},
+      "recommended": {
+        "requests": {"cpu": 0.5, "memory": 1073741824},
+        "limits": {"cpu": null, "memory": 1073741824}
+      }
+    }
+  ]
+}

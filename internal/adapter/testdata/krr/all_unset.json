@@ -1,0 +1,11 @@
+{
+  "scans": [
+    {
+      "object": {"namespace": "default", "kind": "Deployment", "name": "idle", "container": "idle"},
+      "recommended": {
+        "requests": {"cpu": {"value": null, "severity": "OK"}, "memory": {"value": "?", "severity": "OK"}},
+        "limits": {"cpu": null, "memory": {"value": "unset", "severity": "OK"}}
+      }
+    }
+  ]
+}
