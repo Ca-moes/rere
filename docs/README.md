@@ -14,7 +14,8 @@
 - [explanation/](explanation/) — architecture and rationale (the implementation direction).
 - [adrs/](adrs/) — settled decisions with trade-offs (`ADR-NNNN`).
 - [research/](research/) — investigations behind the decisions (`RSCH-NNNN`).
-- [how-to/](how-to/), [reference/](reference/), [tutorials/](tutorials/) — fill in as the tool lands.
+- [reference/](reference/) — lookup material (version/compatibility matrices, config).
+- [how-to/](how-to/), [tutorials/](tutorials/) — fill in as the tool lands.
 
 ## Validating these docs
 

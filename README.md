@@ -6,7 +6,7 @@
 
 Recommenders (Robusta [KRR](https://github.com/robusta-dev/krr), VPA, Goldilocks) already tell you the right CPU/memory requests & limits by reading Prometheus history. The gap nobody fills is **safely writing those numbers back into a GitOps repo** — across raw manifests, Helm `values:`, *and* operator Custom Resources — as **clean, auto-merged pull requests**, with surgical edits that preserve your comments and formatting.
 
-`rere` is a Go CLI + GitHub Action that does exactly that. It is **complementary to your recommender, not a replacement**:
+`rere` is a Go CLI (with a GitHub Action planned — [#13](https://github.com/Ca-moes/rere/issues/13)) that does exactly that. It is **complementary to your recommender, not a replacement**:
 
 > **Keep your recommender — `rere` adds the write-back half.**
 

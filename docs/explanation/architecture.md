@@ -16,7 +16,7 @@ related:
 
 ## Summary
 
-`rere` (ré-ré = **re**source **re**sizer) is the missing *write-back* half of Kubernetes resource right-sizing. Recommenders (Robusta KRR, VPA, Goldilocks) already compute the right CPU/memory requests & limits from history; the gap nobody fills is **safely writing those numbers back into a GitOps repo** — across raw manifests, Helm `values:`, and operator Custom Resources — as clean, auto-merged pull requests. `rere` is a source-available Go CLI + GitHub Action that does exactly that (proprietary; all rights reserved for now — see [ADR-0006](../adrs/0006-proprietary-license.md)). It is **complementary to recommenders**: *keep your recommender, add the write-back half.* See [prior-art.md](prior-art.md) for why the space is otherwise empty.
+`rere` (ré-ré = **re**source **re**sizer) is the missing *write-back* half of Kubernetes resource right-sizing. Recommenders (Robusta KRR, VPA, Goldilocks) already compute the right CPU/memory requests & limits from history; the gap nobody fills is **safely writing those numbers back into a GitOps repo** — across raw manifests, Helm `values:`, and operator Custom Resources — as clean, auto-merged pull requests. `rere` is a source-available Go CLI, with a GitHub Action planned, that does exactly that (proprietary; all rights reserved for now — see [ADR-0006](../adrs/0006-proprietary-license.md)). It is **complementary to recommenders**: *keep your recommender, add the write-back half.* See [prior-art.md](prior-art.md) for why the space is otherwise empty.
 
 ## The pipeline
 
