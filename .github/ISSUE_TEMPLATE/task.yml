@@ -1,0 +1,35 @@
+name: Task
+description: A feature, hardening, refactor, or chore with scope and acceptance criteria.
+title: "<type>(<area>): "
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why this work exists — the problem or need, and what prompted it.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What is in and what is explicitly out.
+    validations:
+      required: true
+  - type: textarea
+    id: approach
+    attributes:
+      label: Approach
+      description: Sketch of the intended implementation, with file references where known.
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How we know it is done — tests, behaviors, docs.
+    validations:
+      required: true
+  - type: textarea
+    id: refs
+    attributes:
+      label: References
+      description: Related ADRs, issues, PRs, external docs.

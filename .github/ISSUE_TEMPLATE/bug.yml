@@ -1,0 +1,47 @@
+name: Bug report
+description: A defect with evidence, a failure scenario, and acceptance criteria.
+title: "bug(<area>): "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One or two sentences stating the defect.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Where the defect lives — file:line references, code excerpts.
+      placeholder: |
+        internal/yamledit/applypaths.go:45-49 — docs matched by kind+name only
+    validations:
+      required: true
+  - type: textarea
+    id: scenario
+    attributes:
+      label: Failure scenario / repro
+      description: Concrete inputs/state → wrong outcome. A runnable repro if you have one.
+    validations:
+      required: true
+  - type: textarea
+    id: fix
+    attributes:
+      label: Proposed fix
+      description: Sketch of the fix, alternatives considered, blast radius.
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: The tests (failing first — TDD) that prove the fix.
+      placeholder: |
+        - [ ] golden: multi-doc file with same-name workloads in two namespaces
+    validations:
+      required: true
+  - type: textarea
+    id: refs
+    attributes:
+      label: References
+      description: Related ADRs, issues, PRs, external docs.
