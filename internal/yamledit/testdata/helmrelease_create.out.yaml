@@ -1,0 +1,15 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: ingress-nginx
+spec:
+  chart:
+    spec:
+      chart: ingress-nginx
+  values:
+    controller:
+      replicaCount: 2 # existing setting
+      resources:
+        requests:
+          cpu: 250m
+          memory: 128Mi

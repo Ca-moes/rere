@@ -17,42 +17,92 @@ import (
 func TranslateTarget(t adapter.Target, maps MapConfig) (adapter.Target, bool) {
 	for i := range maps.Maps {
 		cm := &maps.Maps[i]
-		if cm.Match.WorkloadKind != "" && cm.Match.WorkloadKind != t.Kind {
-			continue
-		}
-		component, mapped := cm.Match.ContainerToComponent[t.Container]
-		// When a map enumerates containers, translate only the ones it names: an
-		// unlisted container (e.g. a CNPG pod's monitoring sidecar) is not
-		// represented by this CR's resources, and for a single-component map it
-		// would otherwise resolve to the same spec.resources path as the mapped
-		// container and clobber its edit.
-		if len(cm.Match.ContainerToComponent) > 0 && !mapped {
-			continue
-		}
-		crName, ok := recoverCRName(cm, t.Name)
+		name, component, ok := matchWorkload(cm.Match, cm.nameRE, t)
 		if !ok {
 			continue
 		}
 		out := t
 		out.Kind = cm.Kind
-		out.Name = crName
+		out.Name = name
 		out.Container = component
 		return out, true
 	}
 	return t, false
 }
 
-// recoverCRName extracts the CR name from a generated-workload name using the
-// rule's NamePattern (first capture group) or NameSuffix (trimmed); with neither
-// set the CR name equals the workload name. The NamePattern regexp is the one
-// MergedMaps cached; for a directly-constructed map it is compiled lazily.
-func recoverCRName(cm *CRMap, workloadName string) (string, bool) {
+// TranslateHelmTarget rewrites a recommender target that names a Helm-generated
+// workload (e.g. the Deployment "ingress-nginx-controller") into the owning Flux
+// HelmRelease identity ({HelmRelease, release name, component}), so repo-scan
+// discovery finds the HelmRelease and the tier-3 mapper resolves the right
+// spec.values subtree. It returns (target, false) unchanged when no chart map
+// matches. Run it before grouping so a chart's several workloads collapse onto
+// one HelmRelease.
+func TranslateHelmTarget(t adapter.Target, charts ChartConfig) (adapter.Target, bool) {
+	for i := range charts.Maps {
+		cm := &charts.Maps[i]
+		// Single-workload chart: the top-level Match recovers the release.
+		if len(cm.Components) == 0 {
+			if name, component, ok := matchWorkload(cm.Match, cm.nameRE, t); ok {
+				return helmTarget(t, name, component), true
+			}
+			continue
+		}
+		// Multi-workload chart: each component's own Match recovers the shared
+		// release name and names the component.
+		for j := range cm.Components {
+			c := &cm.Components[j]
+			if name, _, ok := matchWorkload(c.Match, c.nameRE, t); ok {
+				return helmTarget(t, name, c.Name), true
+			}
+		}
+	}
+	return t, false
+}
+
+// helmTarget stamps a recommender target with the owning HelmRelease identity.
+func helmTarget(t adapter.Target, release, component string) adapter.Target {
+	out := t
+	out.Kind = "HelmRelease"
+	out.Name = release
+	out.Container = component
+	return out
+}
+
+// matchWorkload applies one match rule to a recommender target, returning the
+// recovered owning-resource name and the selected component. Shared by tier-2 CR
+// translation and tier-3 HelmRelease translation.
+//
+// When a rule enumerates containers, only the ones it names translate: an
+// unlisted container (e.g. a CNPG pod's monitoring sidecar) is not represented
+// by this resource's block, and for a single-component map it would otherwise
+// resolve to the same resources path as a mapped container and clobber its edit.
+func matchWorkload(m MatchRule, nameRE *regexp.Regexp, t adapter.Target) (name, component string, ok bool) {
+	if m.WorkloadKind != "" && m.WorkloadKind != t.Kind {
+		return "", "", false
+	}
+	component, mapped := m.ContainerToComponent[t.Container]
+	if len(m.ContainerToComponent) > 0 && !mapped {
+		return "", "", false
+	}
+	name, ok = recoverName(m, nameRE, t.Name)
+	if !ok {
+		return "", "", false
+	}
+	return name, component, true
+}
+
+// recoverName extracts the owning resource's name from a generated-workload name
+// using the rule's NamePattern (first capture group) or NameSuffix (trimmed);
+// with neither set the name equals the workload name. nameRE is the precompiled
+// NamePattern (cached by MergedMaps / MergedChartMaps); a nil nameRE falls back
+// to a lazy compile for a directly-constructed rule.
+func recoverName(m MatchRule, nameRE *regexp.Regexp, workloadName string) (string, bool) {
 	switch {
-	case cm.Match.NamePattern != "":
-		re := cm.nameRE
+	case m.NamePattern != "":
+		re := nameRE
 		if re == nil {
 			var err error
-			if re, err = regexp.Compile(cm.Match.NamePattern); err != nil {
+			if re, err = regexp.Compile(m.NamePattern); err != nil {
 				return "", false // Validate rejects bad patterns before we get here
 			}
 		}
@@ -61,11 +111,11 @@ func recoverCRName(cm *CRMap, workloadName string) (string, bool) {
 			return "", false
 		}
 		return sub[1], true
-	case cm.Match.NameSuffix != "":
-		if !strings.HasSuffix(workloadName, cm.Match.NameSuffix) {
+	case m.NameSuffix != "":
+		if !strings.HasSuffix(workloadName, m.NameSuffix) {
 			return "", false
 		}
-		return strings.TrimSuffix(workloadName, cm.Match.NameSuffix), true
+		return strings.TrimSuffix(workloadName, m.NameSuffix), true
 	default:
 		return workloadName, true
 	}

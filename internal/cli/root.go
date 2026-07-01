@@ -85,12 +85,14 @@ func runPipeline(ctx context.Context, out io.Writer, opts *options) error {
 	}
 
 	maps := fieldmap.MergedMaps(cfg.FieldMaps)
+	charts := fieldmap.MergedChartMaps(cfg.HelmReleaseMaps)
 	runner := &Runner{
 		Cfg:        cfg,
 		Repo:       opts.repoPath,
 		Discoverer: &discover.RepoScanner{Root: opts.repoPath, Include: cfg.Discover.Include, Exclude: cfg.Discover.Exclude},
-		Mappers:    []fieldmap.FieldMapper{fieldmap.Tier2{Maps: maps}, fieldmap.Tier1{}},
+		Mappers:    []fieldmap.FieldMapper{fieldmap.Tier2{Maps: maps}, fieldmap.Tier3{Charts: charts}, fieldmap.Tier1{}},
 		FieldMaps:  maps,
+		ChartMaps:  charts,
 		Out:        out,
 	}
 	if !cfg.DryRun {

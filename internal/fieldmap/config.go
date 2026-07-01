@@ -71,20 +71,31 @@ func (c MapConfig) Validate() error {
 				return fmt.Errorf("fieldMaps.maps[%d].components[%d]: name and path are required", i, j)
 			}
 		}
-		if m.Match.NamePattern != "" {
-			re, err := regexp.Compile(m.Match.NamePattern)
-			if err != nil {
-				return fmt.Errorf("fieldMaps.maps[%d] (%s/%s): invalid namePattern: %w", i, m.Group, m.Kind, err)
-			}
-			if re.NumSubexp() < 1 {
-				return fmt.Errorf("fieldMaps.maps[%d] (%s/%s): namePattern must have a capture group for the CR name", i, m.Group, m.Kind)
-			}
+		if err := validateNamePattern(m.Match); err != nil {
+			return fmt.Errorf("fieldMaps.maps[%d] (%s/%s): %w", i, m.Group, m.Kind, err)
 		}
 		key := m.Group + "/" + m.Kind
 		if seen[key] {
 			return fmt.Errorf("fieldMaps: duplicate map for %s", key)
 		}
 		seen[key] = true
+	}
+	return nil
+}
+
+// validateNamePattern checks a match rule's NamePattern compiles and captures the
+// recovered name in its first group. A blank pattern is valid (suffix or
+// identity recovery). Shared by the tier-2 and tier-3 config validators.
+func validateNamePattern(m MatchRule) error {
+	if m.NamePattern == "" {
+		return nil
+	}
+	re, err := regexp.Compile(m.NamePattern)
+	if err != nil {
+		return fmt.Errorf("invalid namePattern: %w", err)
+	}
+	if re.NumSubexp() < 1 {
+		return fmt.Errorf("namePattern must have a capture group for the name")
 	}
 	return nil
 }

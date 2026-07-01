@@ -3,7 +3,7 @@ type: explanation
 title: rere architecture and implementation direction
 status: active
 created: 2026-06-30
-updated: 2026-06-30
+updated: 2026-07-01
 owners: [Ca-moes]
 visibility: public
 audience: [operator-dev, platform-engineer]
@@ -45,11 +45,21 @@ A thin **cli** layer (cobra, [ADR-0005](../adrs/0005-cobra-cli-framework.md)) or
 
 - **Tier 1** raw Deployment/StatefulSet/DaemonSet → PodSpec path `spec.template.spec.containers[name==X].resources`, **inferred, zero-config**.
 - **Tier 2** operator CR → **config-driven** field maps (`fieldMaps` in config) with **built-ins** for CNPG `Cluster` and `OpenTelemetryCollector` (both `spec.resources`), user-extensible. CRD-schema auto-discovery is deferred.
-- **Tier 3** HelmRelease `values:` → **per-chart config** with built-in maps for common charts, so most repos need none.
+- **Tier 3** Flux HelmRelease `values:` → **config-driven** per-chart maps (`helmReleaseMaps` in config) with **built-ins** for `keycloakx` (single-workload, `spec.values.resources`) and `ingress-nginx` (multi-component, `spec.values.controller.resources` + `defaultBackend`), user-extensible, so most repos need none. Only inline `spec.values` is edited; `spec.valuesFrom` and `chartRef`-only releases are out of scope.
 
 `FieldMapper` is one interface (`Supports` / `ResolvePath` / `Resolve`); the run loop selects the first mapper that supports a manifest and edits the path it resolves, so later tiers slot in without touching callers. The editor (`yamledit`) is path-addressed and knows nothing about kinds.
 
-**Operator-CR translation.** Recommenders report the operator-*generated* workload — KRR sees the Deployment `otel-collector`, or a CNPG instance Pod `mycluster-1`, not the `OpenTelemetryCollector`/`Cluster` CR that lives in the repo. Each tier-2 map carries a **match rule** (workload kind + name suffix/pattern + container→component) that rewrites the reported identity to the owning CR before discovery, collapsing instance pods into a single CR — their per-instance recommendations merged by **max**, so the busiest instance's needs win — and yielding one PR. The rewrite is committed only when that CR actually exists in the repo; a raw workload whose name coincidentally matches a built-in rule (a Deployment `metrics-collector`, a Pod `foo-3`) falls back to tier-1. The built-in match rules are best-effort pending a real `krr -f json` sample from those operators.
+A tier-3 chart map keys on the chart name (`spec.chart.spec.chart`) and points at the resources path under `values:`; multi-workload charts list `components`, each with its own `path` and `match`:
+
+```yaml
+helmReleaseMaps:
+  maps:
+    - chart: my-chart                          # spec.chart.spec.chart
+      resourcePath: [spec, values, resources]  # exactly one of resourcePath / components
+      match: { workloadKind: Deployment, nameSuffix: -my-chart }
+```
+
+**Workload-to-source translation.** Recommenders report the *generated* workload, not the source that lives in the repo. For **operator CRs**, KRR sees the Deployment `otel-collector` or a CNPG instance Pod `mycluster-1`, not the `OpenTelemetryCollector`/`Cluster` CR; each tier-2 map carries a **match rule** (workload kind + name suffix/pattern + container→component) that rewrites the reported identity to the owning CR before discovery, collapsing instance pods into a single CR — their per-instance recommendations merged by **max**, so the busiest instance's needs win — and yielding one PR. **HelmReleases** work the same way: KRR sees the chart-generated Deployment `ingress-nginx-controller`, so each tier-3 chart map carries match rules (one per component for multi-workload charts) that recover the release name and its component, and the mapper picks the `spec.values` subtree by the release's chart. Every rewrite is committed only when the target actually exists in the repo; a raw workload whose name coincidentally matches a built-in rule (a Deployment `metrics-collector`, a Pod `foo-3`) falls back to tier-1. The built-in match rules are best-effort pending real `krr -f json` samples from those operators and charts.
 
 ## Scope
 
