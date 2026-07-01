@@ -56,11 +56,17 @@ func (c ChartConfig) Validate() error {
 		if err := validateNamePattern(m.Match); err != nil {
 			return fmt.Errorf("helmReleaseMaps.maps[%d] (%s): %w", i, m.Chart, err)
 		}
+		if err := validateGateOnlyContainers(m.Match); err != nil {
+			return fmt.Errorf("helmReleaseMaps.maps[%d] (%s): %w", i, m.Chart, err)
+		}
 		for j, comp := range m.Components {
 			if comp.Name == "" || len(comp.Path) == 0 {
 				return fmt.Errorf("helmReleaseMaps.maps[%d].components[%d]: name and path are required", i, j)
 			}
 			if err := validateNamePattern(comp.Match); err != nil {
+				return fmt.Errorf("helmReleaseMaps.maps[%d].components[%d] (%s): %w", i, j, comp.Name, err)
+			}
+			if err := validateGateOnlyContainers(comp.Match); err != nil {
 				return fmt.Errorf("helmReleaseMaps.maps[%d].components[%d] (%s): %w", i, j, comp.Name, err)
 			}
 		}
@@ -100,6 +106,18 @@ func MergedChartMaps(user ChartConfig) ChartConfig {
 		}
 	}
 	return out
+}
+
+// validateGateOnlyContainers rejects non-empty containerToComponent values in a
+// chart map: tier-3 picks a component by its own match rule (or the single
+// resourcePath), so the map's values are pure container gates and must be "".
+func validateGateOnlyContainers(m MatchRule) error {
+	for container, comp := range m.ContainerToComponent {
+		if comp != "" {
+			return fmt.Errorf("match.containerToComponent[%q] names component %q; chart-map values are container gates and must be \"\"", container, comp)
+		}
+	}
+	return nil
 }
 
 // compileNameRE compiles a match rule's NamePattern, or returns nil when unset.
