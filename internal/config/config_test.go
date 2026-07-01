@@ -136,3 +136,44 @@ recommender:
 		t.Fatal("expected error for unsupported recommender source")
 	}
 }
+
+func TestValidate_MergeMethod(t *testing.T) {
+	// A typo would otherwise fall through to the server's default merge method
+	// silently (automerge picks no method for unknown strings).
+	bad := writeConfig(t, `
+dryRun: true
+git:
+  mergeMethod: sqaush
+`)
+	if _, err := Load(bad); err == nil {
+		t.Error("expected error for unknown git.mergeMethod")
+	}
+	for _, m := range []string{"merge", "squash", "rebase"} {
+		p := writeConfig(t, "dryRun: true\ngit:\n  mergeMethod: "+m+"\n")
+		if _, err := Load(p); err != nil {
+			t.Errorf("mergeMethod %q should validate: %v", m, err)
+		}
+	}
+}
+
+func TestValidate_LiveRequiresOwnerNameRepo(t *testing.T) {
+	// Shape is checked at Validate, not after all the edit work at PR time.
+	p := writeConfig(t, `
+git:
+  repo: just-a-name
+`)
+	if _, err := Load(p); err == nil {
+		t.Fatal("expected error: git.repo must be owner/name")
+	}
+}
+
+func TestValidate_LiveRequiresBaseBranch(t *testing.T) {
+	p := writeConfig(t, `
+git:
+  repo: acme/widgets
+  baseBranch: ""
+`)
+	if _, err := Load(p); err == nil {
+		t.Fatal("expected error: live mode requires git.baseBranch")
+	}
+}

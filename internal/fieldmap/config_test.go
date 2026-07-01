@@ -127,3 +127,44 @@ func TestMergedMaps_CompilesNamePattern(t *testing.T) {
 		t.Fatal("MergedMaps must precompile and cache the NamePattern regexp")
 	}
 }
+
+func TestMapConfigValidate_ContainerToComponentCrossChecks(t *testing.T) {
+	// A component value on a resourcePath-only map is silently ignored at
+	// resolve time today; a typo'd component name only fails per-target. Both
+	// are config errors and must die at Validate.
+	cases := []struct {
+		name string
+		m    CRMap
+	}{
+		{"component value on resourcePath map", CRMap{
+			Group: "acme.io", Kind: "App", ResourcePath: []string{"spec", "resources"},
+			Match: MatchRule{WorkloadKind: "Deployment", ContainerToComponent: map[string]string{"web": "server"}},
+		}},
+		{"unknown component name", CRMap{
+			Group: "acme.io", Kind: "App",
+			Components: []Component{{Name: "server", Path: []string{"spec", "server", "resources"}}},
+			Match:      MatchRule{WorkloadKind: "Deployment", ContainerToComponent: map[string]string{"web": "sever"}},
+		}},
+		{"empty component value on components map", CRMap{
+			Group: "acme.io", Kind: "App",
+			Components: []Component{{Name: "server", Path: []string{"spec", "server", "resources"}}},
+			Match:      MatchRule{WorkloadKind: "Deployment", ContainerToComponent: map[string]string{"web": ""}},
+		}},
+	}
+	for _, tc := range cases {
+		if err := (MapConfig{Maps: []CRMap{tc.m}}).Validate(); err == nil {
+			t.Errorf("%s: expected Validate error", tc.name)
+		}
+	}
+	// The valid shapes stay valid.
+	good := MapConfig{Maps: []CRMap{
+		{Group: "a.io", Kind: "A", ResourcePath: []string{"spec", "resources"},
+			Match: MatchRule{WorkloadKind: "Pod", ContainerToComponent: map[string]string{"main": ""}}},
+		{Group: "b.io", Kind: "B",
+			Components: []Component{{Name: "server", Path: []string{"spec", "server", "resources"}}},
+			Match:      MatchRule{WorkloadKind: "Pod", ContainerToComponent: map[string]string{"main": "server"}}},
+	}}
+	if err := good.Validate(); err != nil {
+		t.Errorf("valid maps rejected: %v", err)
+	}
+}

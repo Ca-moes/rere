@@ -640,3 +640,36 @@ func TestRunner_DiscoverErrorIsFailure(t *testing.T) {
 		t.Error("a non-skip discover error must fail the run, got nil")
 	}
 }
+
+func TestRunner_RelativePathFailureIsError(t *testing.T) {
+	// When the repo-relative path cannot be computed, the absolute local path
+	// must never leak into the PR tree path — fail the workload instead.
+	_, path := writeManifest(t)
+	cfg := config.Defaults()
+	cfg.DryRun = true
+	var out bytes.Buffer
+	r := &Runner{
+		Cfg:        cfg,
+		Repo:       "not-an-absolute-repo-root",
+		Discoverer: fakeDiscoverer{loc: &discover.Location{File: path, DocIndex: 0}},
+		Out:        &out,
+	}
+	if err := r.Run(context.Background(), cpuTarget("250m")); err == nil {
+		t.Fatalf("expected failure when repo-relative path cannot be computed, output:\n%s", out.String())
+	}
+}
+
+func TestRunner_BranchNameSanitized(t *testing.T) {
+	// Workload identity comes from untrusted KRR JSON; characters invalid in git
+	// refs must not reach the branch name.
+	r := &Runner{Cfg: config.Defaults()}
+	got := r.branchName(workloadGroup{Namespace: "team a", Kind: "Deployment", Name: "web~app..v2"})
+	if !strings.HasPrefix(got, "rere/") {
+		t.Errorf("branch prefix lost: %q", got)
+	}
+	for _, bad := range []string{" ", "~", "^", ":", "?", "*", "[", "\\", ".."} {
+		if strings.Contains(got, bad) {
+			t.Errorf("branch name %q contains invalid sequence %q", got, bad)
+		}
+	}
+}

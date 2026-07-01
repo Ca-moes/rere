@@ -1,16 +1,16 @@
 # CLAUDE.md — agent briefing for `rere`
 
-`rere` (ré-ré = **re**source **re**sizer) is an MIT Go CLI + GitHub Action: the missing *write-back* half of Kubernetes resource right-sizing. Recommenders (KRR, VPA) compute correct CPU/memory requests & limits; `rere` safely writes those numbers back into a GitOps repo as clean, auto-merged PRs — across raw manifests, Helm `values:`, and operator CRs — via surgical, comment-preserving YAML edits (kyaml).
+`rere` (ré-ré = **re**source **re**sizer) is a source-available (proprietary, see LICENSE / ADR-0006) Go CLI, with a GitHub Action planned: the missing *write-back* half of Kubernetes resource right-sizing. Recommenders (KRR, VPA) compute correct CPU/memory requests & limits; `rere` safely writes those numbers back into a GitOps repo as clean, auto-merged PRs — across raw manifests, Helm `values:`, and operator CRs — via surgical, comment-preserving YAML edits (kyaml).
 
 Read before non-trivial work:
 
 - [docs/explanation/architecture.md](docs/explanation/architecture.md) — what rere is, the pipeline, the components, the tiers, scope.
-- [docs/adrs/](docs/adrs/) — the settled decisions (Go+kyaml, don't-fork-Renovate, Flux-provenance discovery, local-checkout + GitHub-API write, CLI framework).
+- [docs/adrs/](docs/adrs/) — the settled decisions (Go+kyaml, don't-fork-Renovate, repo-scan discovery, local-checkout + GitHub-API write, CLI framework).
 - [docs/research/](docs/research/) — the evidence behind those decisions.
 
 ## Pipeline
 
-`KRR JSON → adapter → discover (owning Flux Kustomization/HelmRelease + repo path) → fieldmap (resolve field path) → policy (deadband/headroom/limits) → yamledit (kyaml surgical edit) → pr (branch/commit/PR + auto-merge)`. Code under `cmd/rere` + `internal/{adapter,discover,fieldmap,policy, yamledit,pr,cli,config}`.
+`KRR JSON → adapter → discover (repo scan: kind+name+namespace → file + doc index) → fieldmap (resolve field path) → policy (deadband/headroom/limits) → yamledit (kyaml surgical edit) → pr (branch/commit/PR + auto-merge)`. Code under `cmd/rere` + `internal/{adapter,discover,fieldmap,policy, yamledit,pr,cli,config}`.
 
 ## Conventions
 

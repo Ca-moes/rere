@@ -74,6 +74,18 @@ func (c MapConfig) Validate() error {
 		if err := validateNamePattern(m.Match); err != nil {
 			return fmt.Errorf("fieldMaps.maps[%d] (%s/%s): %w", i, m.Group, m.Kind, err)
 		}
+		components := map[string]bool{}
+		for _, comp := range m.Components {
+			components[comp.Name] = true
+		}
+		for container, comp := range m.Match.ContainerToComponent {
+			if hasPath && comp != "" {
+				return fmt.Errorf("fieldMaps.maps[%d] (%s/%s): match.containerToComponent[%q] names component %q, but the map uses resourcePath (use \"\")", i, m.Group, m.Kind, container, comp)
+			}
+			if hasComp && !components[comp] {
+				return fmt.Errorf("fieldMaps.maps[%d] (%s/%s): match.containerToComponent[%q] names unknown component %q", i, m.Group, m.Kind, container, comp)
+			}
+		}
 		key := m.Group + "/" + m.Kind
 		if seen[key] {
 			return fmt.Errorf("fieldMaps: duplicate map for %s", key)

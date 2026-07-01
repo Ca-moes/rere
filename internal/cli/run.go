@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/pmezard/go-difflib/difflib"
@@ -213,9 +214,11 @@ func (r *Runner) processWorkload(ctx context.Context, grp workloadGroup) error {
 		return nil
 	}
 
+	// The repo-relative path becomes the PR tree path; the absolute local path
+	// must never leak there.
 	rel, err := filepath.Rel(r.Repo, loc.File)
 	if err != nil {
-		rel = loc.File
+		return fmt.Errorf("relative path for %s under repo %s: %w", loc.File, r.Repo, err)
 	}
 	rel = filepath.ToSlash(rel)
 
@@ -313,14 +316,28 @@ func resolveCells(m fieldmap.FieldMapper, root *yaml.RNode, tg fieldmap.Target) 
 }
 
 // branchName builds a head branch unique per workload, including the namespace
-// so same-name workloads in different namespaces do not collide.
+// so same-name workloads in different namespaces do not collide. The identity
+// comes from untrusted recommender JSON, so it is sanitized to a ref-safe form.
 func (r *Runner) branchName(grp workloadGroup) string {
 	parts := make([]string, 0, 3)
 	if grp.Namespace != "" {
 		parts = append(parts, grp.Namespace)
 	}
 	parts = append(parts, strings.ToLower(grp.Kind), grp.Name)
-	return r.Cfg.Git.BranchPrefix + strings.Join(parts, "-")
+	return r.Cfg.Git.BranchPrefix + sanitizeRefComponent(strings.Join(parts, "-"))
+}
+
+var refUnsafe = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
+
+// sanitizeRefComponent maps a workload identity to a git-ref-safe branch
+// component: unsafe characters collapse to "-", ".." sequences (invalid in
+// refs) collapse, and leading/trailing separators are trimmed.
+func sanitizeRefComponent(s string) string {
+	s = refUnsafe.ReplaceAllString(s, "-")
+	for strings.Contains(s, "..") {
+		s = strings.ReplaceAll(s, "..", ".")
+	}
+	return strings.Trim(s, ".-")
 }
 
 // workloadRef is the human-readable identity of a workload, namespace-qualified.

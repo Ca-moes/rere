@@ -108,6 +108,11 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("git.auth.tokenEnv must be the NAME of an env var, not a token value")
 		}
 	}
+	switch c.Git.MergeMethod {
+	case "merge", "squash", "rebase":
+	default:
+		return fmt.Errorf("git.mergeMethod must be one of merge, squash, rebase; got %q", c.Git.MergeMethod)
+	}
 	if err := c.FieldMaps.Validate(); err != nil {
 		return err
 	}
@@ -115,8 +120,12 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if !c.DryRun {
-		if c.Git.Repo == "" {
-			return fmt.Errorf("git.repo (owner/name) is required unless --dry-run")
+		owner, name, ok := strings.Cut(c.Git.Repo, "/")
+		if !ok || owner == "" || name == "" {
+			return fmt.Errorf("git.repo must be owner/name unless --dry-run, got %q", c.Git.Repo)
+		}
+		if c.Git.BaseBranch == "" {
+			return fmt.Errorf("git.baseBranch is required unless --dry-run")
 		}
 		if c.Git.Auth.TokenEnv == "" {
 			return fmt.Errorf("git.auth.tokenEnv is required unless --dry-run")

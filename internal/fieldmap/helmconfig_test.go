@@ -158,3 +158,27 @@ func TestMergedChartMaps_CompilesNamePatterns(t *testing.T) {
 		t.Fatal("MergedChartMaps must precompile each component's NamePattern")
 	}
 }
+
+func TestChartConfigValidate_ContainerToComponentGateOnly(t *testing.T) {
+	// Tier-3 never selects components via containerToComponent — a chart
+	// component is picked by its own match rule, and the map's values are pure
+	// container gates. A non-empty value is a config misunderstanding.
+	bad := []ChartConfig{
+		{Maps: []ChartMap{{Chart: "c", ResourcePath: []string{"spec", "values", "resources"},
+			Match: MatchRule{WorkloadKind: "Deployment", ContainerToComponent: map[string]string{"web": "server"}}}}},
+		{Maps: []ChartMap{{Chart: "c", Components: []ChartComponent{{
+			Name: "server", Path: []string{"spec", "values", "server", "resources"},
+			Match: MatchRule{WorkloadKind: "Deployment", ContainerToComponent: map[string]string{"web": "server"}},
+		}}}}},
+	}
+	for i, cfg := range bad {
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("case %d: expected Validate error for non-gate containerToComponent value", i)
+		}
+	}
+	good := ChartConfig{Maps: []ChartMap{{Chart: "c", ResourcePath: []string{"spec", "values", "resources"},
+		Match: MatchRule{WorkloadKind: "Deployment", ContainerToComponent: map[string]string{"web": ""}}}}}
+	if err := good.Validate(); err != nil {
+		t.Errorf("gate-only value rejected: %v", err)
+	}
+}
