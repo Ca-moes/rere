@@ -165,3 +165,15 @@ func TestTier1_ResolveInitContainer(t *testing.T) {
 		t.Errorf("path = %v, want %v", edits[0].Path, wantPath)
 	}
 }
+
+func TestTier1_SupportsRejectsForeignGroup(t *testing.T) {
+	// A CR that happens to be named "Deployment" in another API group is not an
+	// apps/v1 workload; claiming it would edit a coincidental pod-template path.
+	m := Tier1{}
+	if m.Supports(parse(t, "apiVersion: acme.io/v1\nkind: Deployment\nmetadata:\n  name: web\n")) {
+		t.Error("acme.io/v1 Deployment must not be claimed by tier-1")
+	}
+	if !m.Supports(parse(t, workloadYAML("Deployment"))) {
+		t.Error("apps/v1 Deployment must stay supported")
+	}
+}

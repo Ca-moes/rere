@@ -77,6 +77,12 @@ func helmTarget(t adapter.Target, release, component string) adapter.Target {
 // by this resource's block, and for a single-component map it would otherwise
 // resolve to the same resources path as a mapped container and clobber its edit.
 func matchWorkload(m MatchRule, nameRE *regexp.Regexp, t adapter.Target) (name, component string, ok bool) {
+	// A zero-value rule (a resolve-only map with no match:) never matches: every
+	// gate below is permissive when unset, so an empty rule would otherwise claim
+	// every target — and user maps run before the built-ins and tier-1.
+	if m.WorkloadKind == "" && m.NameSuffix == "" && m.NamePattern == "" && len(m.ContainerToComponent) == 0 {
+		return "", "", false
+	}
 	if m.WorkloadKind != "" && m.WorkloadKind != t.Kind {
 		return "", "", false
 	}
@@ -115,7 +121,11 @@ func recoverName(m MatchRule, nameRE *regexp.Regexp, workloadName string) (strin
 		if !strings.HasSuffix(workloadName, m.NameSuffix) {
 			return "", false
 		}
-		return strings.TrimSuffix(workloadName, m.NameSuffix), true
+		// A workload named exactly the suffix would recover "" — no such CR.
+		if name := strings.TrimSuffix(workloadName, m.NameSuffix); name != "" {
+			return name, true
+		}
+		return "", false
 	default:
 		return workloadName, true
 	}

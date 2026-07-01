@@ -172,3 +172,51 @@ func TestTranslateTarget_MultiComponent(t *testing.T) {
 		t.Errorf("got %s/%s container=%q, want MyApp/myapp container=server", got.Kind, got.Name, got.Container)
 	}
 }
+
+func TestTranslateTarget_ResolveOnlyMapNeverMatches(t *testing.T) {
+	// A resolve-only user map (resourcePath, no match:) is legitimate config, but
+	// its zero-value MatchRule must never translate: it would otherwise pass
+	// every gate — user maps come first — and rewrite every recommender target
+	// to the CR's kind, shadowing tier-1 and every built-in.
+	user := MapConfig{Maps: []CRMap{{
+		Group: "acme.io", Kind: "MyApp", ResourcePath: []string{"spec", "resources"},
+	}}}
+	maps := MergedMaps(user)
+	if got, ok := TranslateTarget(krrTarget("Deployment", "web", "web"), maps); ok {
+		t.Errorf("zero-value match rule must not translate, got %+v", got)
+	}
+	// Built-ins behind the resolve-only user map must still fire.
+	got, ok := TranslateTarget(krrTarget("Deployment", "otel-collector", "otc-container"), maps)
+	if !ok || got.Kind != "OpenTelemetryCollector" {
+		t.Errorf("built-in OTel rule must still translate, got %+v ok=%v", got, ok)
+	}
+}
+
+func TestTranslateHelmTarget_ResolveOnlyMapNeverMatches(t *testing.T) {
+	// Same guard for tier-3: a chart map (or a component) without match: must
+	// never claim a workload.
+	user := ChartConfig{Maps: []ChartMap{
+		{Chart: "my-chart", ResourcePath: []string{"spec", "values", "resources"}},
+		{Chart: "multi", Components: []ChartComponent{
+			{Name: "server", Path: []string{"spec", "values", "server", "resources"}},
+		}},
+	}}
+	maps := MergedChartMaps(user)
+	if got, ok := TranslateHelmTarget(krrTarget("Deployment", "web", "web"), maps); ok {
+		t.Errorf("zero-value match rules must not translate, got %+v", got)
+	}
+	// Built-ins behind the resolve-only user maps must still fire.
+	got, ok := TranslateHelmTarget(krrTarget("StatefulSet", "auth-keycloakx", "keycloak"), maps)
+	if !ok || got.Name != "auth" {
+		t.Errorf("built-in keycloakx rule must still translate, got %+v ok=%v", got, ok)
+	}
+}
+
+func TestTranslateTarget_SuffixOnlyNameNeverMatches(t *testing.T) {
+	// A workload named exactly the suffix would recover CR name "" — a
+	// nonexistent identity; it must be a non-match, not a translation.
+	got, ok := TranslateTarget(krrTarget("Deployment", "-collector", "otc-container"), BuiltinMaps())
+	if ok {
+		t.Errorf("suffix-only workload name must not translate, got %+v", got)
+	}
+}

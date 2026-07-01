@@ -15,13 +15,12 @@ var tier1Kinds = map[string]bool{
 	"DaemonSet":   true,
 }
 
-// Supports reports whether root is a raw workload kind Tier1 understands.
+// Supports reports whether root is a raw workload kind Tier1 understands. The
+// API group must be "apps": a CR named Deployment in another group is not a
+// workload, even if it embeds a pod template at the same path.
 func (Tier1) Supports(root *yaml.RNode) bool {
-	meta, err := root.GetMeta()
-	if err != nil {
-		return false
-	}
-	return Tier1Supports(meta.Kind)
+	group, kind := groupKind(root)
+	return group == "apps" && Tier1Supports(kind)
 }
 
 // Tier1Supports reports whether a workload kind is handled by Tier1. Exposed so
