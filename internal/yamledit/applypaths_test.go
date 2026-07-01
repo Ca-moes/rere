@@ -96,6 +96,27 @@ func TestApplyPathsGolden(t *testing.T) {
 				{Path: []string{"spec", "resources", "requests", "memory"}, Value: "295Mi"},
 			},
 		},
+		// Tier-3 HelmRelease values: per-component resources nested under
+		// spec.values, editing several components in one doc. Proves comments and
+		// unrelated values keys (replicaCount, enabled) survive.
+		{
+			name: "helmrelease_ingress", kind: "HelmRelease", mName: "ingress-nginx", wantChanged: true,
+			edits: []PathEdit{
+				{Path: []string{"spec", "values", "controller", "resources", "requests", "cpu"}, Value: "250m"},
+				{Path: []string{"spec", "values", "controller", "resources", "requests", "memory"}, Value: "295Mi"},
+				{Path: []string{"spec", "values", "controller", "resources", "limits", "cpu"}, Delete: true},
+				{Path: []string{"spec", "values", "controller", "resources", "limits", "memory"}, Value: "295Mi"},
+				{Path: []string{"spec", "values", "defaultBackend", "resources", "requests", "cpu"}, Value: "15m"},
+				{Path: []string{"spec", "values", "defaultBackend", "resources", "requests", "memory"}, Value: "40Mi"},
+			},
+		},
+		{
+			name: "helmrelease_create", kind: "HelmRelease", mName: "ingress-nginx", wantChanged: true,
+			edits: []PathEdit{
+				{Path: []string{"spec", "values", "controller", "resources", "requests", "cpu"}, Value: "250m"},
+				{Path: []string{"spec", "values", "controller", "resources", "requests", "memory"}, Value: "128Mi"},
+			},
+		},
 	}
 
 	for _, c := range cases {
