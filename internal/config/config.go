@@ -15,12 +15,13 @@ import (
 
 // Config is the full rere configuration.
 type Config struct {
-	Recommender Recommender        `json:"recommender"`
-	Git         Git                `json:"git"`
-	Policy      policy.Config      `json:"policy"`
-	Discover    Discover           `json:"discover"`
-	FieldMaps   fieldmap.MapConfig `json:"fieldMaps"` // user maps, overlaid on the built-ins at runtime
-	DryRun      bool               `json:"dryRun"`
+	Recommender     Recommender          `json:"recommender"`
+	Git             Git                  `json:"git"`
+	Policy          policy.Config        `json:"policy"`
+	Discover        Discover             `json:"discover"`
+	FieldMaps       fieldmap.MapConfig   `json:"fieldMaps"`       // tier-2 operator-CR maps, overlaid on the built-ins at runtime
+	HelmReleaseMaps fieldmap.ChartConfig `json:"helmReleaseMaps"` // tier-3 per-chart maps, overlaid on the built-ins at runtime
+	DryRun          bool                 `json:"dryRun"`
 }
 
 // Recommender selects the input source and its location.
@@ -108,6 +109,9 @@ func (c *Config) Validate() error {
 		}
 	}
 	if err := c.FieldMaps.Validate(); err != nil {
+		return err
+	}
+	if err := c.HelmReleaseMaps.Validate(); err != nil {
 		return err
 	}
 	if !c.DryRun {

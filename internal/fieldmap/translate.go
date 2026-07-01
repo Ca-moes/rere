@@ -30,6 +30,44 @@ func TranslateTarget(t adapter.Target, maps MapConfig) (adapter.Target, bool) {
 	return t, false
 }
 
+// TranslateHelmTarget rewrites a recommender target that names a Helm-generated
+// workload (e.g. the Deployment "ingress-nginx-controller") into the owning Flux
+// HelmRelease identity ({HelmRelease, release name, component}), so repo-scan
+// discovery finds the HelmRelease and the tier-3 mapper resolves the right
+// spec.values subtree. It returns (target, false) unchanged when no chart map
+// matches. Run it before grouping so a chart's several workloads collapse onto
+// one HelmRelease.
+func TranslateHelmTarget(t adapter.Target, charts ChartConfig) (adapter.Target, bool) {
+	for i := range charts.Maps {
+		cm := &charts.Maps[i]
+		// Single-workload chart: the top-level Match recovers the release.
+		if len(cm.Components) == 0 {
+			if name, component, ok := matchWorkload(cm.Match, cm.nameRE, t); ok {
+				return helmTarget(t, name, component), true
+			}
+			continue
+		}
+		// Multi-workload chart: each component's own Match recovers the shared
+		// release name and names the component.
+		for j := range cm.Components {
+			c := &cm.Components[j]
+			if name, _, ok := matchWorkload(c.Match, c.nameRE, t); ok {
+				return helmTarget(t, name, c.Name), true
+			}
+		}
+	}
+	return t, false
+}
+
+// helmTarget stamps a recommender target with the owning HelmRelease identity.
+func helmTarget(t adapter.Target, release, component string) adapter.Target {
+	out := t
+	out.Kind = "HelmRelease"
+	out.Name = release
+	out.Container = component
+	return out
+}
+
 // matchWorkload applies one match rule to a recommender target, returning the
 // recovered owning-resource name and the selected component. Shared by tier-2 CR
 // translation and tier-3 HelmRelease translation.

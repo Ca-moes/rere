@@ -32,7 +32,8 @@ type Runner struct {
 	Discoverer discover.Discoverer
 	Opener     pr.Opener
 	Mappers    []fieldmap.FieldMapper
-	FieldMaps  fieldmap.MapConfig // merged maps, for translating CR workloads pre-grouping
+	FieldMaps  fieldmap.MapConfig   // merged maps, for translating CR workloads pre-grouping
+	ChartMaps  fieldmap.ChartConfig // merged chart maps, for translating HelmRelease workloads pre-grouping
 	Out        io.Writer
 }
 
@@ -53,26 +54,31 @@ type workloadGroup struct {
 	Targets   []adapter.Target
 }
 
-// translateTargets rewrites operator-CR workloads (named by the recommender as
-// the generated Deployment/Pod) to their owning CR identity before grouping, so
-// instance pods collapse into one CR. Raw workloads pass through. A no-op when
-// no field maps are configured.
+// translateTargets rewrites workloads named by the recommender as the generated
+// Deployment/Pod to the owning resource that lives in the repo — an operator CR
+// (tier-2) or a Flux HelmRelease (tier-3) — before grouping, so a resource's
+// several workloads collapse into one. Raw workloads pass through. A no-op when
+// no maps are configured.
 //
-// The rewrite is committed only when the target CR actually exists in the repo:
-// a real workload whose name coincidentally matches a built-in match rule (e.g.
-// a Deployment "metrics-collector", or a bare Pod "foo-3") would otherwise be
-// rewritten to a nonexistent CR and silently skipped, instead of being
+// The rewrite is committed only when the target actually exists in the repo: a
+// real workload whose name coincidentally matches a built-in match rule (e.g. a
+// Deployment "metrics-collector", or a bare Pod "foo-3") would otherwise be
+// rewritten to a nonexistent resource and silently skipped, instead of being
 // right-sized by tier-1.
 func (r *Runner) translateTargets(ctx context.Context, targets []adapter.Target) []adapter.Target {
-	if len(r.FieldMaps.Maps) == 0 {
+	if len(r.FieldMaps.Maps) == 0 && len(r.ChartMaps.Maps) == 0 {
 		return targets
 	}
 	out := make([]adapter.Target, len(targets))
 	for i, t := range targets {
+		out[i] = t
+		// Tier-2 operator CRs first, then tier-3 HelmReleases.
 		if ct, ok := fieldmap.TranslateTarget(t, r.FieldMaps); ok && r.crResolvable(ctx, ct) {
 			out[i] = ct
-		} else {
-			out[i] = t
+			continue
+		}
+		if ht, ok := fieldmap.TranslateHelmTarget(t, r.ChartMaps); ok && r.crResolvable(ctx, ht) {
+			out[i] = ht
 		}
 	}
 	return out

@@ -85,6 +85,69 @@ func TestTranslateTarget_UnmappedContainerNotTranslated(t *testing.T) {
 	}
 }
 
+func TestTranslateHelmTarget_SingleComponent(t *testing.T) {
+	// keycloakx renders one StatefulSet "<release>-keycloakx".
+	got, ok := TranslateHelmTarget(krrTarget("StatefulSet", "auth-keycloakx", "keycloak"), MergedChartMaps(ChartConfig{}))
+	if !ok {
+		t.Fatal("expected keycloakx workload to translate")
+	}
+	if got.Kind != "HelmRelease" || got.Name != "auth" || got.Container != "" {
+		t.Errorf("got %s/%s container=%q, want HelmRelease/auth container=\"\"", got.Kind, got.Name, got.Container)
+	}
+	if got.Namespace != "default" || got.Recommended.Requests.CPU == nil {
+		t.Errorf("namespace/recommendation not preserved: %+v", got)
+	}
+}
+
+func TestTranslateHelmTarget_MultiComponent(t *testing.T) {
+	maps := MergedChartMaps(ChartConfig{})
+	// The controller and defaultBackend are separate Deployments of the same
+	// ingress-nginx release; each must recover the release and its own component.
+	ctrl, ok := TranslateHelmTarget(krrTarget("Deployment", "ingress-nginx-controller", "controller"), maps)
+	if !ok || ctrl.Kind != "HelmRelease" || ctrl.Name != "ingress-nginx" || ctrl.Container != "controller" {
+		t.Errorf("controller: got %s/%s container=%q ok=%v, want HelmRelease/ingress-nginx container=controller",
+			ctrl.Kind, ctrl.Name, ctrl.Container, ok)
+	}
+	db, ok := TranslateHelmTarget(krrTarget("Deployment", "ingress-nginx-defaultbackend", "default-backend"), maps)
+	if !ok || db.Container != "defaultBackend" || db.Name != "ingress-nginx" {
+		t.Errorf("defaultBackend: got %s/%s container=%q ok=%v, want HelmRelease/ingress-nginx container=defaultBackend",
+			db.Kind, db.Name, db.Container, ok)
+	}
+}
+
+func TestTranslateHelmTarget_ContainerGateBlocksFalsePositive(t *testing.T) {
+	// A plain "cert-manager-controller" Deployment ends with the built-in
+	// "-controller" suffix, but its container is not the ingress-nginx controller
+	// container, so the container gate must reject it (it stays a tier-1 workload).
+	got, ok := TranslateHelmTarget(krrTarget("Deployment", "cert-manager-controller", "cert-manager"), MergedChartMaps(ChartConfig{}))
+	if ok {
+		t.Errorf("a non-ingress -controller Deployment must not translate, got %+v", got)
+	}
+}
+
+func TestTranslateHelmTarget_Passthrough(t *testing.T) {
+	in := krrTarget("Deployment", "web", "web")
+	got, ok := TranslateHelmTarget(in, MergedChartMaps(ChartConfig{}))
+	if ok {
+		t.Errorf("a plain Deployment must not translate, got %+v", got)
+	}
+	if got.Kind != "Deployment" || got.Name != "web" {
+		t.Errorf("passthrough altered the target: %+v", got)
+	}
+}
+
+func TestTranslateHelmTarget_UserPatternRecoversRelease(t *testing.T) {
+	user := ChartConfig{Maps: []ChartMap{{
+		Chart:        "myapp",
+		ResourcePath: []string{"spec", "values", "resources"},
+		Match:        MatchRule{WorkloadKind: "Deployment", NamePattern: `^(.*)-myapp$`},
+	}}}
+	got, ok := TranslateHelmTarget(krrTarget("Deployment", "prod-myapp", "app"), MergedChartMaps(user))
+	if !ok || got.Kind != "HelmRelease" || got.Name != "prod" {
+		t.Errorf("got %s/%s ok=%v, want HelmRelease/prod", got.Kind, got.Name, ok)
+	}
+}
+
 func TestTranslateTarget_MultiComponent(t *testing.T) {
 	maps := MapConfig{Maps: []CRMap{{
 		Group: "example.com", Kind: "MyApp",

@@ -460,6 +460,101 @@ spec:
 	}
 }
 
+const ingressHelmRelease = `apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: ingress-nginx
+  namespace: default
+spec:
+  chart:
+    spec:
+      chart: ingress-nginx
+  values:
+    controller:
+      resources:
+        requests:
+          cpu: "1"
+          memory: 256Mi
+    defaultBackend:
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+`
+
+func tier3Runner(t *testing.T, dir string, cfg *config.Config, out *bytes.Buffer, opener pr.Opener) *Runner {
+	t.Helper()
+	maps := fieldmap.MergedMaps(fieldmap.MapConfig{})
+	charts := fieldmap.MergedChartMaps(fieldmap.ChartConfig{})
+	return &Runner{
+		Cfg: cfg, Repo: dir,
+		Discoverer: &discover.RepoScanner{Root: dir},
+		Mappers:    []fieldmap.FieldMapper{fieldmap.Tier2{Maps: maps}, fieldmap.Tier3{Charts: charts}, fieldmap.Tier1{}},
+		FieldMaps:  maps,
+		ChartMaps:  charts,
+		Opener:     opener,
+		Out:        out,
+	}
+}
+
+func TestRunner_Tier3HelmReleaseValues(t *testing.T) {
+	// The recommender names the generated Deployment "ingress-nginx-controller";
+	// rere must translate that to the ingress-nginx HelmRelease and edit its
+	// spec.values.controller.resources — the full tier-3 chain end-to-end.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ingress.yaml")
+	if err := os.WriteFile(path, []byte(ingressHelmRelease), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Defaults()
+	cfg.DryRun = true
+	var out bytes.Buffer
+	r := tier3Runner(t, dir, cfg, &out, nil)
+	targets := []adapter.Target{{
+		Namespace: "default", Kind: "Deployment", Name: "ingress-nginx-controller", Container: "controller",
+		Recommended: adapter.Recommended{Requests: adapter.ResourceValues{CPU: q("250m")}},
+	}}
+	if err := r.Run(context.Background(), targets); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(out.String(), "250m") {
+		t.Errorf("expected spec.values.controller.resources downsized to 250m:\n%s", out.String())
+	}
+	after, _ := os.ReadFile(path)
+	if string(after) != ingressHelmRelease {
+		t.Error("dry-run modified the HelmRelease on disk")
+	}
+}
+
+func TestRunner_Tier3MultiComponentCollapseToOnePR(t *testing.T) {
+	// The controller and defaultBackend are separate generated Deployments of one
+	// release; both must land in a single PR editing the one HelmRelease file.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "ingress.yaml"), []byte(ingressHelmRelease), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Defaults()
+	cfg.Git.Repo = "acme/widgets"
+	opener := &recordingOpener{}
+	r := tier3Runner(t, dir, cfg, &bytes.Buffer{}, opener)
+	targets := []adapter.Target{
+		{Namespace: "default", Kind: "Deployment", Name: "ingress-nginx-controller", Container: "controller",
+			Recommended: adapter.Recommended{Requests: adapter.ResourceValues{CPU: q("250m")}}},
+		{Namespace: "default", Kind: "Deployment", Name: "ingress-nginx-defaultbackend", Container: "default-backend",
+			Recommended: adapter.Recommended{Requests: adapter.ResourceValues{CPU: q("30m")}}},
+	}
+	if err := r.Run(context.Background(), targets); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(opener.reqs) != 1 {
+		t.Fatalf("both components must collapse into one PR, got %d", len(opener.reqs))
+	}
+	content := opener.reqs[0].Edits[0].Content
+	if !strings.Contains(content, "250m") || !strings.Contains(content, "30m") {
+		t.Errorf("the single PR must carry both components' edits:\n%s", content)
+	}
+}
+
 func TestRunner_SkipsUnsupportedManifest(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "cr.yaml")
